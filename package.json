@@ -1,7 +1,7 @@
 {
   "name": "token-radar",
-  "version": "0.1.0",
-  "description": "实时监控 Claude Code / Codex 的 token 消耗、费用与订阅额度的桌面应用",
+  "version": "0.2.0",
+  "description": "自动发现本机 AI 编程工具，实时监控 token 消耗、费用与订阅额度的桌面应用",
   "author": "seaways1015-afk",
   "homepage": "https://github.com/seaways1015-afk/token-radar",
   "repository": {
@@ -59,6 +59,35 @@
     },
     "portable": {
       "artifactName": "TokenRadar-${version}-portable.exe"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "seaways1015-afk",
+      "repo": "token-radar",
+      "releaseType": "release"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "identity": null,
+      "artifactName": "TokenRadar-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "icon": "build/icon.png",
+      "artifactName": "TokenRadar-${version}-linux-${arch}.${ext}"
     }
   }
 }

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/seaways1015-afk/token-radar/releases/latest">下载 Windows 版</a> ·
+  <a href="https://github.com/seaways1015-afk/token-radar/releases/latest">下载（Windows / macOS / Linux）</a> ·
   <a href="#从源码运行">从源码运行</a> ·
   <a href="#english">English</a>
 </p>
@@ -60,10 +60,15 @@
 
 在 [Releases](https://github.com/seaways1015-afk/token-radar/releases/latest) 下载：
 
-- `TokenRadar-Setup-x.y.z.exe`：安装版
-- `TokenRadar-x.y.z-portable.exe`：免安装版，双击即用
+| 系统 | 文件 |
+|---|---|
+| Windows | `TokenRadar-Setup-x.y.z.exe`（安装版）、`TokenRadar-x.y.z-portable.exe`（免安装版） |
+| macOS | `TokenRadar-x.y.z-mac-arm64.dmg`（Apple 芯片）、`TokenRadar-x.y.z-mac-x64.dmg`（Intel） |
+| Linux | `TokenRadar-x.y.z-linux-x86_64.AppImage` |
 
-> 安装包没有代码签名，首次运行时 Windows SmartScreen 可能提示“未知发布者”，点“更多信息 → 仍要运行”即可。
+> 安装包没有代码签名：
+> - Windows 首次运行时 SmartScreen 可能提示“未知发布者”，点「更多信息 → 仍要运行」
+> - macOS 提示“无法验证开发者”时，在「系统设置 → 隐私与安全性」里点「仍要打开」，或运行 `xattr -cr "/Applications/Token Radar.app"`
 
 ## 从源码运行
 
@@ -76,6 +81,15 @@ npm install
 npm start        # 桌面版（Electron）
 npm run web      # 浏览器版：启动本地服务并打开 http://127.0.0.1:17321
 npm run dist     # 打包 Windows 安装版 + 免安装版到 dist/
+```
+
+### 发布新版本
+
+安装包由 GitHub Actions 自动构建（`.github/workflows/release.yml`）：把 `package.json` 的 `version` 改成新版本并提交，然后推送同名标签，Windows / macOS / Linux 三个平台会自动打包并发布到 Releases。
+
+```bash
+git tag v0.2.0
+git push origin main v0.2.0
 ```
 
 ## 订阅识别是怎么做的
