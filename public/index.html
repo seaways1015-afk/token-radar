@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Token Radar</title>
+  <link rel="icon" href="icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-blob" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="pill brand">
+      <svg viewBox="0 0 24 24" class="ico brand-ico"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="5.5" opacity=".55"/><path d="M12 12 19 5"/><circle cx="18.4" cy="15.6" r="1.5" class="blip"/></svg>
+      <span>Token Radar</span>
+    </div>
+    <nav class="pill seg" id="range" role="tablist" aria-label="时间范围">
+      <button data-range="today" class="on">今日</button>
+      <button data-range="7d">7 天</button>
+      <button data-range="30d">30 天</button>
+      <button data-range="all">全部</button>
+    </nav>
+
+    <div class="drag-space"></div>
+    <div class="pill live" id="live" title="正在监听本地日志">
+      <span class="dot"></span><span id="liveText">正在读取日志…</span>
+    </div>
+    <div class="drag-space"></div>
+
+    <div class="pill icons">
+      <button id="btnExport" title="导出 CSV"><svg viewBox="0 0 24 24" class="ico"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M4 13v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/></svg></button>
+      <button id="btnPricing" title="模型定价"><svg viewBox="0 0 24 24" class="ico"><path d="M12 2v20M17 6.5C16 5 14.2 4.5 12 4.5c-2.8 0-4.5 1.3-4.5 3.3 0 4.7 9.5 2.4 9.5 7.6 0 2.1-2 3.6-5 3.6-2.4 0-4.2-.8-5.2-2.4"/></svg></button>
+      <button id="btnTheme" title="切换主题"><svg viewBox="0 0 24 24" class="ico"><path d="M12 3a9 9 0 1 0 9 9c-.1-.8-1-1.2-1.7-.8A5.5 5.5 0 0 1 12.8 4.7c.4-.7 0-1.6-.8-1.7Z"/></svg></button>
+      <button id="btnPin" class="electron-only" title="窗口置顶"><svg viewBox="0 0 24 24" class="ico"><path d="M9 4h6l-1 5 3 3v2H7v-2l3-3-1-5Zm3 10v6"/></svg></button>
+      <button id="btnMini" class="electron-only" title="迷你悬浮窗"><svg viewBox="0 0 24 24" class="ico"><rect x="3" y="5" width="18" height="14" rx="2.5"/><rect x="12" y="11" width="6" height="5" rx="1"/></svg></button>
+    </div>
+    <div class="winctl electron-only">
+      <button data-win="min" title="最小化"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
+      <button data-win="max" title="最大化"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button>
+      <button data-win="close" title="关闭" class="close"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
+    </div>
+  </header>
+
+  <main id="app">
+    <section class="grid-top">
+      <article class="card hero">
+        <div class="hero-text">
+          <h3>实时消耗 · 近 10 分钟</h3>
+          <div class="hero-num"><span id="rtPerMin" class="num big">0</span><span class="unit">tokens / 分钟</span></div>
+          <div class="chips">
+            <span class="chip" id="rtCost">$0 / 小时</span>
+            <span class="chip" id="rtHour">近 1 小时 0 tokens</span>
+          </div>
+          <div class="hero-legend" id="heroLegend"></div>
+          <p class="hint">外圈：近 60 分钟每分钟用量<br />每滴水：一次请求，从它的工具飞入</p>
+        </div>
+        <div class="ring-wrap">
+          <svg id="ring" viewBox="-200 -200 400 400" role="img" aria-label="近 60 分钟每分钟用量">
+            <g id="ringDots"></g>
+            <g id="ringTicks"></g>
+            <g id="drops"></g>
+            <g id="spark"></g>
+          </svg>
+          <div class="tip" id="ringTip" hidden></div>
+        </div>
+      </article>
+
+      <article class="card kpi" id="kTotal">
+        <header><h3>总 Token</h3><span class="delta" id="dTotal"></span></header>
+        <div class="num mid" id="vTotal">—</div>
+        <p class="sub" id="sTotal">&nbsp;</p>
+        <div class="spark" id="spTotal"></div>
+      </article>
+
+      <article class="card kpi" id="kCost">
+        <header><h3><span id="costTitle">预估费用</span> <button class="badge warn" id="bUnpriced" hidden></button></h3><span class="delta" id="dCost"></span></header>
+        <div class="num mid" id="vCost">—</div>
+        <p class="sub" id="sCost">&nbsp;</p>
+        <div class="spark" id="spCost"></div>
+      </article>
+
+      <article class="card kpi" id="kIO">
+        <header><h3>新输入 / 输出</h3><span class="muted" id="ioShare"></span></header>
+        <div class="num mid"><span id="vIn">—</span><span class="slash">/</span><span id="vOut">—</span></div>
+        <div class="split" id="ioBar"><i class="in"></i><i class="out"></i></div>
+        <div class="legend">
+          <span><i class="sw in"></i>新输入</span><span><i class="sw out"></i>输出</span>
+          <span class="muted" id="ioCw"></span>
+        </div>
+      </article>
+
+      <article class="card kpi" id="kCache">
+        <header><h3>缓存命中率</h3></header>
+        <div class="cache-row">
+          <div>
+            <div class="num mid" id="vHit">—</div>
+            <p class="sub" id="sHit">&nbsp;</p>
+          </div>
+          <svg class="gauge" viewBox="0 0 100 100" aria-hidden="true">
+            <path class="g-track" d="" id="gTrack" />
+            <path class="g-val" d="" id="gVal" />
+            <circle class="g-dot" r="3.4" id="gDot" />
+          </svg>
+        </div>
+      </article>
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <h2>Agent 工具</h2>
+        <span class="muted">点击某个工具，整个面板只看它的数据</span>
+      </div>
+      <div class="sources" id="sources"></div>
+    </section>
+
+    <section class="grid-mid">
+      <article class="card">
+        <header class="card-head"><h3>用量趋势</h3><div class="legend" id="trendLegend"></div></header>
+        <div class="trend" id="trend"></div>
+      </article>
+      <article class="card">
+        <header class="card-head"><h3>模型分布</h3><span class="muted" id="modelCount"></span></header>
+        <ul class="rows" id="models"></ul>
+      </article>
+    </section>
+
+    <section class="grid-bot">
+      <article class="card">
+        <header class="card-head"><h3>项目 Top</h3></header>
+        <ul class="rows" id="projects"></ul>
+      </article>
+      <article class="card">
+        <header class="card-head"><h3>工具调用 Top</h3></header>
+        <ul class="rows" id="tools"></ul>
+      </article>
+      <article class="card">
+        <header class="card-head"><h3>最近请求</h3></header>
+        <ul class="feed" id="recent"></ul>
+      </article>
+    </section>
+  </main>
+
+  <div class="mini-bar" id="miniBar">
+    <svg viewBox="-200 -200 400 400" class="mini-spark" id="miniSpark"></svg>
+    <div><div class="num" id="mPerMin">0</div><div class="muted">tokens / 分钟</div></div>
+    <div><div class="num" id="mToday">—</div><div class="muted">今日 token</div></div>
+    <div><div class="num" id="mCost">—</div><div class="muted">今日费用</div></div>
+    <button id="btnUnmini" title="还原"><svg viewBox="0 0 24 24" class="ico"><path d="M4 14v6h6M20 10V4h-6M4 20l6.5-6.5M20 4l-6.5 6.5"/></svg></button>
+  </div>
+
+  <dialog id="pricingDlg">
+    <form method="dialog" class="dlg">
+      <header class="card-head"><h3>计费设置</h3><button class="x" value="cancel" aria-label="关闭">✕</button></header>
+
+      <h4>订阅 <span class="scan-msg" id="planMsg"></span><button type="button" class="btn sm" id="btnScanPlans">自动扫描</button></h4>
+      <p class="muted">从本机 Claude Code 账号信息和 Codex 日志识别当前套餐，并填入默认月费。订阅用户的“费用”是按 API 价折算的等价值，用来和月费比较是否回本。</p>
+      <table>
+        <thead><tr><th>工具</th><th>识别结果</th><th>计费方式</th><th>月费（美元）</th></tr></thead>
+        <tbody id="plansRows"></tbody>
+      </table>
+
+      <h4>模型单价（美元 / 百万 token）<span class="scan-msg" id="priceMsg"></span><button type="button" class="btn sm" id="btnSyncPrices">联网同步价格</button></h4>
+      <p class="muted">内置了 Claude 官方价格。“联网同步”会从 LiteLLM 公开价格表查找未计价的模型并自动填入，你也可以直接手动填写；留空则计入“未计价”。缓存读取不填时按输入价 0.1x 计算。</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>模型</th><th>输入</th><th>输出</th><th>缓存读取</th><th>缓存写入</th><th>来源</th></tr></thead>
+          <tbody id="pricingRows"></tbody>
+        </table>
+      </div>
+      <footer><button value="cancel" class="btn">取消</button><button id="pricingSave" value="default" class="btn primary">保存</button></footer>
+    </form>
+  </dialog>
+
+  <div class="tip" id="tip" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

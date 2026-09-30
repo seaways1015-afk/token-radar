@@ -1,0 +1,24 @@
+{
+  "_note": "单位：美元 / 百万 token。match 为模型名前缀（去掉日期后缀后匹配，最长前缀优先）。cacheWrite5m / cacheWrite1h / cacheRead 缺省时按 input 的 1.25x / 2x / 0.1x 计算。未匹配的模型计入“未计价”。",
+  "models": [
+    { "match": "claude-fable-5-1",  "input": 10, "output": 50, "cacheRead": 0.25 },
+    { "match": "claude-mythos-5-1", "input": 10, "output": 50, "cacheRead": 0.25 },
+    { "match": "claude-fable-5",    "input": 10, "output": 50, "cacheRead": 1 },
+    { "match": "claude-mythos-5",   "input": 10, "output": 50, "cacheRead": 1 },
+    { "match": "claude-opus-5-5",   "input": 4,  "output": 20, "cacheRead": 0.2 },
+    { "match": "claude-opus-5",     "input": 5,  "output": 25 },
+    { "match": "claude-opus-4-8",   "input": 5,  "output": 25 },
+    { "match": "claude-opus-4-7",   "input": 5,  "output": 25 },
+    { "match": "claude-opus-4-6",   "input": 5,  "output": 25 },
+    { "match": "claude-opus-4-5",   "input": 5,  "output": 25 },
+    { "match": "claude-opus-4-1",   "input": 15, "output": 75 },
+    { "match": "claude-opus-4",     "input": 15, "output": 75 },
+    { "match": "claude-sonnet-5-5", "input": 2,  "output": 10, "cacheRead": 0.2 },
+    { "match": "claude-sonnet-5",   "input": 2,  "output": 10 },
+    { "match": "claude-sonnet-4",   "input": 3,  "output": 15 },
+    { "match": "claude-3-7-sonnet", "input": 3,  "output": 15 },
+    { "match": "claude-haiku-4-5",  "input": 1,  "output": 5 },
+    { "match": "claude-3-5-haiku",  "input": 0.8, "output": 4 }
+  ],
+  "fastModeMultiplier": 2
+}
