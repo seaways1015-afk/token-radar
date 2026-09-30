@@ -8,7 +8,7 @@ const { EventEmitter } = require('events');
 const zlib = require('zlib');
 const { dataFile } = require('./paths');
 
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 const CHUNK = 4 << 20;
 const NL = 10;
 
@@ -89,6 +89,7 @@ class Collector extends EventEmitter {
     this.scanning = false;
     this.limits = {};      // 各工具最近一次上报的额度信息（目前只有 Codex 会写入日志）
     this.cursors = {};     // 数据库类来源的增量游标
+    this.limitHist = {};   // 额度使用率的历史快照，用于预测耗尽时间和统计触顶次数
   }
 
   // ---------- 缓存 ----------
@@ -100,6 +101,7 @@ class Collector extends EventEmitter {
       for (const [p, f] of Object.entries(raw.files)) this.files.set(p, f);
       this.cursors = raw.cursors || {};
       this.limits = raw.limits || {};
+      this.limitHist = raw.limitHist || {};
     } catch { /* 首次运行或缓存损坏：全量扫描 */ }
   }
 
@@ -111,7 +113,7 @@ class Collector extends EventEmitter {
   async saveCache() {
     await fsp.mkdir(path.dirname(this.cacheFile), { recursive: true });
     const tmp = this.cacheFile + '.tmp';
-    await fsp.writeFile(tmp, JSON.stringify({ v: CACHE_VERSION, records: this.records, files: Object.fromEntries(this.files), limits: this.limits, cursors: this.cursors }));
+    await fsp.writeFile(tmp, JSON.stringify({ v: CACHE_VERSION, records: this.records, files: Object.fromEntries(this.files), limits: this.limits, limitHist: this.limitHist, cursors: this.cursors }));
     await fsp.rename(tmp, this.cacheFile);
   }
 
@@ -220,10 +222,36 @@ class Collector extends EventEmitter {
   }
 
   noteLimits(src, t, rl) {
+    // 历史快照：文件读取顺序不定，先追加，查询时再排序去重
+    const h = this.limitHist[src] || (this.limitHist[src] = []);
+    const pw = rl.primary || {}, sw = rl.secondary || {};
+    h.push({ t, p: pw.used_percent ?? null, pr: pw.resets_at ?? null, pw: pw.window_minutes ?? null, s: sw.used_percent ?? null, sr: sw.resets_at ?? null });
+    this.histDirty = true;
     const cur = this.limits[src];
     if (cur && cur.t >= t) return;
     this.limits[src] = { t, plan_type: rl.plan_type || null, primary: rl.primary || null, secondary: rl.secondary || null, credits: rl.credits || null, reached: rl.rate_limit_reached_type || null };
     this.limitsChanged = true;
+  }
+
+  // 排好序、去掉相邻重复、只保留最近 35 天的额度历史
+  getLimitHist(src) {
+    const h = this.limitHist[src] || [];
+    if (this.histDirty) {
+      for (const k of Object.keys(this.limitHist)) {
+        const arr = this.limitHist[k].sort((a, b) => a.t - b.t);
+        const cutoff = Date.now() - 35 * 86400e3;
+        const out = [];
+        for (const x of arr) {
+          if (x.t < cutoff) continue;
+          const last = out[out.length - 1];
+          if (last && last.p === x.p && last.pr === x.pr && last.s === x.s && last.sr === x.sr) continue;
+          out.push(x);
+        }
+        this.limitHist[k] = out;
+      }
+      this.histDirty = false;
+    }
+    return this.limitHist[src] || h;
   }
 
   // ---------- Claude Code ----------

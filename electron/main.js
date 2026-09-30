@@ -1,5 +1,5 @@
 // Electron 外壳：在主进程里启动本地服务，用无边框窗口加载面板
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, nativeTheme, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, nativeTheme, shell, Notification } = require('electron');
 const path = require('path');
 const { startServer } = require('../server/index');
 
@@ -69,8 +69,20 @@ ipcMain.on('mini', (_, on) => {
 });
 ipcMain.on('theme', (_, t) => { nativeTheme.themeSource = t === 'auto' ? 'system' : t; });
 
+// Windows 上系统通知需要 AppUserModelId
+// 只有安装版会创建带该 ID 的开始菜单快捷方式；开发模式下设置它反而会让通知不显示
+if (process.platform === 'win32' && app.isPackaged) app.setAppUserModelId('com.tokenradar.app');
+
+function notify(a) {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({ title: a.title, body: a.body, icon: iconImage(), silent: a.level !== 'warn' });
+  n.on('click', () => { if (win) { win.show(); win.focus(); } });
+  n.show();
+}
+
 app.whenReady().then(async () => {
-  const { port } = await startServer();
+  const { port, alerts } = await startServer();
+  alerts.on('alert', notify);
   serverUrl = `http://127.0.0.1:${port}`;
   createWindow();
   createTray();

@@ -30,7 +30,8 @@
 
     <div class="pill icons">
       <button id="btnExport" title="导出 CSV"><svg viewBox="0 0 24 24" class="ico"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M4 13v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/></svg></button>
-      <button id="btnPricing" title="模型定价"><svg viewBox="0 0 24 24" class="ico"><path d="M12 2v20M17 6.5C16 5 14.2 4.5 12 4.5c-2.8 0-4.5 1.3-4.5 3.3 0 4.7 9.5 2.4 9.5 7.6 0 2.1-2 3.6-5 3.6-2.4 0-4.2-.8-5.2-2.4"/></svg></button>
+      <button id="btnAlerts" title="提醒设置"><svg viewBox="0 0 24 24" class="ico"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Zm4 4a2 2 0 0 0 4 0"/></svg></button>
+      <button id="btnPricing" title="计费设置"><svg viewBox="0 0 24 24" class="ico"><path d="M12 2v20M17 6.5C16 5 14.2 4.5 12 4.5c-2.8 0-4.5 1.3-4.5 3.3 0 4.7 9.5 2.4 9.5 7.6 0 2.1-2 3.6-5 3.6-2.4 0-4.2-.8-5.2-2.4"/></svg></button>
       <button id="btnTheme" title="切换主题"><svg viewBox="0 0 24 24" class="ico"><path d="M12 3a9 9 0 1 0 9 9c-.1-.8-1-1.2-1.7-.8A5.5 5.5 0 0 1 12.8 4.7c.4-.7 0-1.6-.8-1.7Z"/></svg></button>
       <button id="btnPin" class="electron-only" title="窗口置顶"><svg viewBox="0 0 24 24" class="ico"><path d="M9 4h6l-1 5 3 3v2H7v-2l3-3-1-5Zm3 10v6"/></svg></button>
       <button id="btnMini" class="electron-only" title="迷你悬浮窗"><svg viewBox="0 0 24 24" class="ico"><rect x="3" y="5" width="18" height="14" rx="2.5"/><rect x="12" y="11" width="6" height="5" rx="1"/></svg></button>
@@ -157,7 +158,19 @@
 
   <dialog id="pricingDlg">
     <form method="dialog" class="dlg">
-      <header class="card-head"><h3>计费设置</h3><button class="x" value="cancel" aria-label="关闭">✕</button></header>
+      <header class="card-head"><h3>设置</h3><button class="x" value="cancel" aria-label="关闭">✕</button></header>
+
+      <h4 id="alertsSection">提醒 <span class="scan-msg" id="alertMsg"></span><button type="button" class="btn sm" id="btnTestAlert">发送测试通知</button></h4>
+      <p class="muted">达到条件时弹出系统通知，同一额度窗口 / 同一天只提醒一次。花费类提醒只统计按量计费的工具（订阅不额外扣费，不计入）。留空表示关闭。</p>
+      <div class="alert-form">
+        <label class="chk"><input type="checkbox" id="aEnabled"> 开启提醒</label>
+        <label class="chk"><input type="checkbox" id="aPredict"> 预计 1 小时内用完额度时提醒</label>
+        <label>Codex 额度用到 <input id="aQuota" inputmode="decimal" placeholder="80"> % 时提醒（95% 会再提醒一次）</label>
+        <label>今日按量花费超过 $ <input id="aDaily" inputmode="decimal" placeholder="不提醒"></label>
+        <label>近 1 小时按量花费超过 $ <input id="aHourly" inputmode="decimal" placeholder="不提醒"></label>
+        <label>单个会话今日花费超过 $ <input id="aSession" inputmode="decimal" placeholder="不提醒"></label>
+      </div>
+      <div class="alert-hist" id="alertHist"></div>
 
       <h4>订阅 <span class="scan-msg" id="planMsg"></span><button type="button" class="btn sm" id="btnScanPlans">自动扫描</button></h4>
       <p class="muted">从本机 Claude Code 账号信息和 Codex 日志识别当前套餐，并填入默认月费。订阅用户的“费用”是按 API 价折算的等价值，用来和月费比较是否回本。</p>
@@ -179,6 +192,7 @@
   </dialog>
 
   <div class="tip" id="tip" hidden></div>
+  <div class="toasts" id="toasts" popover="manual" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@ const { summary, tok } = require('./stats');
 const pricing = require('./pricing');
 const plans = require('./plans');
 const tools = require('./tools');
+const { Alerts } = require('./alerts');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -58,7 +59,8 @@ const priceKey = (r) => (r.provider ? r.provider + '/' + r.model : r.model);
 // 与 costOf 一致：先按“供应商/模型”，再按模型名
 const effectivePrice = (k) => pricing.priceFor(k) || (k.includes('/') ? pricing.priceFor(k.slice(k.lastIndexOf('/') + 1)) : null);
 
-function json(res, code, body) {
+function json(res, code, body, extra) {
+  if (extra) body = { ...body, ...extra };
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
 }
@@ -75,6 +77,7 @@ function readBody(req) {
 async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
   const collector = new Collector();
   collectorRef = collector;
+  const alerts = new Alerts(collector, () => plans.resolve(collector.limits));
   const clients = new Set();
 
   collector.on('records', (added) => {
@@ -82,6 +85,11 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
     const cutoff = Date.now() - 5 * 60e3;
     const live = added.filter((r) => r.t >= cutoff).map((r) => ({ t: r.t, src: r.src, model: r.model, tokens: tok(r), tools: r.tools || [] }));
     const msg = `event: update\ndata: ${JSON.stringify({ live })}\n\n`;
+    for (const res of clients) res.write(msg);
+  });
+
+  alerts.on('alert', (a) => {
+    const msg = `event: alert\ndata: ${JSON.stringify(a)}\n\n`;
     for (const res of clients) res.write(msg);
   });
 
@@ -97,7 +105,7 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
           limits: collector.limits,
           // 只显示本机装了、或者已经有数据的工具
           visible: scanTools().filter((t) => t.status !== 'absent').map((t) => t.id),
-        }));
+        }), { forecast: alerts.quotaForecast() });
       }
       if (url.pathname === '/api/events') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
@@ -122,6 +130,13 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
           return { model: m, price: effectivePrice(m), user: u };
         });
         return json(res, 200, { models, userOthers: user.filter((u) => !used.has(u)) });
+      }
+      if (url.pathname === '/api/alerts') {
+        if (req.method === 'POST') alerts.setConfig(await readBody(req));
+        return json(res, 200, { config: alerts.config, history: alerts.history });
+      }
+      if (url.pathname === '/api/alerts/test' && req.method === 'POST') {
+        return json(res, 200, alerts.test());
       }
       if (url.pathname === '/api/tools') {
         const list = scanTools(url.searchParams.has('rescan'));
@@ -179,9 +194,10 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
 
   collector.start().then(() => {
     for (const c of clients) c.write('event: update\ndata: {"live":[]}\n\n');
+    alerts.start();
   });
 
-  return { server, port: actualPort, collector };
+  return { server, port: actualPort, collector, alerts };
 }
 
 module.exports = { startServer };

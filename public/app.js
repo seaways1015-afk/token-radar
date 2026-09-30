@@ -126,6 +126,13 @@
       for (const it of live) if (state.src === 'all' || it.src === state.src) spawnDrop(it);
       scheduleRefresh(live.length ? 400 : 100);
     });
+    es.addEventListener('alert', (e) => {
+      const a = JSON.parse(e.data);
+      toast(a);
+      if (!bridge && 'Notification' in window && Notification.permission === 'granted') {
+        try { new Notification(a.title, { body: a.body, icon: 'icon.svg' }); } catch { /* ignore */ }
+      }
+    });
     es.onerror = () => { state.connected = false; setLive('off'); };
     es.onopen = () => { state.connected = true; };
   }
@@ -342,10 +349,11 @@
     const verdict = ratio >= 1 ? `<b class="good">已回本 ${ratio.toFixed(1)}×</b>` : `已用出 <b>${Math.round(ratio * 100)}%</b> 月费`;
     return `<div class="subline" title="${proj != null ? `按当前速度，月底约折合 ${usd(proj)}` : ''}">本月折算 <b>${usd(m.cost)}</b> / 月费 ${usd(plan.monthly)} · ${verdict}</div>`;
   }
-  function quotaHTML(lim) {
+  function quotaHTML(lim, forecast) {
     if (!lim || !(lim.primary || lim.secondary)) return '';
     const now = Date.now();
-    const row = (w) => {
+    const fc = forecast || {};
+    const row = (w, slot) => {
       if (!w) return '';
       const name = w.window_minutes === 300 ? '5 小时额度' : w.window_minutes === 10080 ? '每周额度' : `${Math.round(w.window_minutes / 60)} 小时额度`;
       const resetAt = w.resets_at * 1000;
@@ -353,9 +361,11 @@
       const p = reset ? 0 : Math.min(100, w.used_percent);
       const cls = p >= 90 ? 'hot' : p >= 75 ? 'warm' : '';
       return `<div class="quota ${cls}"><span>${name}</span><span class="qb"><i style="width:${p}%"></i></span>
-        <span class="qv">${reset ? '已重置' : `${Math.round(p)}%`}</span><span class="qr">${reset ? '' : dur(resetAt - now) + '后重置'}</span></div>`;
+        <span class="qv">${reset ? '已重置' : `${Math.round(p)}%`}</span>${reset ? '<span class="qr"></span>'
+        : fc[slot] ? `<span class="qr soon" title="按最近 30 分钟的速度推算；${dur(resetAt - now)}后重置">约 ${dur(fc[slot].exhaustAt - now)}后用完</span>`
+        : `<span class="qr">${dur(resetAt - now)}后重置</span>`}</div>`;
     };
-    return `<div class="quotas" title="来自最近一次请求的上报 · ${ago(lim.t)}">${row(lim.primary)}${row(lim.secondary)}</div>`;
+    return `<div class="quotas" title="来自最近一次请求的上报 · ${ago(lim.t)}">${row(lim.primary, 'primary')}${row(lim.secondary, 'secondary')}</div>`;
   }
 
   // ---------- Agent 工具卡片 ----------
@@ -379,7 +389,7 @@
         <div class="meta"><span>${s.unpriced && !s.cost ? '未计价' : (plan && plan.subscription ? '等价 ' : '') + usd(s.cost)}</span><span>${s.requests.toLocaleString()} 次请求</span><span>${s.sessions} 个会话</span></div>
         ${s.providers && s.providers.length ? `<div class="subline">供应商：${s.providers.slice(0, 3).map((p) => `<b>${esc(p.name)}</b> <span class="muted">${esc(p.models.slice(0, 2).join('、'))}</span>`).join(' · ')}</div>` : ''}
         ${subscriptionHTML(s, d)}
-        ${quotaHTML(s.limits)}
+        ${quotaHTML(s.limits, s.id === 'codex' ? d.forecast : null)}
         <div class="share" title="占比 ${pct(s.tokens / total)}"><i style="width:${(s.tokens / total) * 100}%"></i></div>`;
       b.onclick = () => { state.src = on ? 'all' : s.id; save('tp-src', state.src); refresh(); };
       host.append(b);
@@ -508,6 +518,7 @@
     state.pricingOthers = r.userOthers || [];
     $('#planMsg').textContent = ''; $('#priceMsg').textContent = '';
     renderPlans(await fetch('/api/plans').then((x) => x.json()));
+    await loadAlerts();
     $('#pricingDlg').showModal();
   }
 
@@ -572,8 +583,38 @@
     await Promise.all([
       fetch('/api/pricing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ models }) }),
       fetch('/api/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plans) }),
+      fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(alertConfigFromForm()) }),
     ]);
+    // 浏览器模式需要授权才能弹系统通知
+    if (!bridge && 'Notification' in window && Notification.permission === 'default' && $('#aEnabled').checked) Notification.requestPermission();
     refresh();
+  }
+
+  // ---------- 提醒 ----------
+  function toast(a) {
+    const el = document.createElement('div');
+    el.className = 'toast ' + (a.level || '');
+    el.innerHTML = `<b>${esc(a.title)}</b><span>${esc(a.body || '')}</span>`;
+    const box = $('#toasts');
+    box.append(el);
+    // 放进顶层（popover），这样打开设置对话框时提示也不会被遮住；重新 show 让它排到最上面
+    try { box.hidePopover(); box.showPopover(); } catch { /* 旧浏览器：退化为普通 fixed 定位 */ }
+    setTimeout(() => { el.remove(); if (!box.children.length) try { box.hidePopover(); } catch { /* ignore */ } }, 9000);
+  }
+  async function loadAlerts() {
+    const r = await fetch('/api/alerts').then((x) => x.json());
+    const c = r.config;
+    $('#aEnabled').checked = c.enabled; $('#aPredict').checked = c.predict;
+    $('#aQuota').value = c.quota ?? ''; $('#aDaily').value = c.dailyBudget ?? '';
+    $('#aHourly').value = c.hourlyCost ?? ''; $('#aSession').value = c.sessionCost ?? '';
+    $('#alertHist').innerHTML = r.history.length
+      ? '最近提醒：' + r.history.slice(0, 5).map((a) => `<div>${new Date(a.t).toLocaleString()} · <b>${esc(a.title)}</b> ${esc(a.body)}</div>`).join('')
+      : '';
+    $('#alertMsg').textContent = '';
+  }
+  function alertConfigFromForm() {
+    const v = (id) => $(id).value.trim();
+    return { enabled: $('#aEnabled').checked, predict: $('#aPredict').checked, quota: v('#aQuota'), dailyBudget: v('#aDaily'), hourlyCost: v('#aHourly'), sessionCost: v('#aSession') };
   }
 
   // ---------- 本机工具扫描 ----------
@@ -625,6 +666,12 @@
     $('#pricingSave').onclick = () => { savePricing(); };
     $('#btnScanPlans').onclick = scanPlans;
     $('#btnSyncPrices').onclick = syncPrices;
+    $('#btnAlerts').onclick = async () => { await openPricing(); $('#alertsSection').scrollIntoView(); };
+    $('#btnTestAlert').onclick = async () => {
+      if (!bridge && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
+      await fetch('/api/alerts/test', { method: 'POST' });
+      $('#alertMsg').textContent = '已发送，留意屏幕右下角';
+    };
     $('#btnRescan').onclick = async () => { $('#discSummary').textContent = '扫描中…'; await loadTools(true); refresh(); };
     $('#btnTheme').onclick = () => {
       const t = effectiveDark() ? 'light' : 'dark';
