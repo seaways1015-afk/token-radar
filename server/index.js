@@ -28,6 +28,8 @@ function lookupLiteLLM(table, model) {
   const keys = [model, n, 'openai/' + n, 'anthropic/' + n];
   let key = keys.find((k) => table[k] && table[k].input_cost_per_token != null);
   if (!key) key = Object.keys(table).find((k) => k.endsWith('/' + n) && table[k].input_cost_per_token != null);
+  // “中转商/模型”查不到时，按模型名查官方价格
+  if (!key && n.includes('/')) return lookupLiteLLM(table, n.slice(n.lastIndexOf('/') + 1));
   if (!key) return null;
   const e = table[key];
   const per = (v) => (v == null ? undefined : +(v * 1e6).toFixed(6));
@@ -39,6 +41,10 @@ function lookupLiteLLM(table, model) {
     cacheWrite5m: per(e.cache_creation_input_token_cost),
   };
 }
+
+const priceKey = (r) => (r.provider ? r.provider + '/' + r.model : r.model);
+// 与 costOf 一致：先按“供应商/模型”，再按模型名
+const effectivePrice = (k) => pricing.priceFor(k) || (k.includes('/') ? pricing.priceFor(k.slice(k.lastIndexOf('/') + 1)) : null);
 
 function json(res, code, body) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -95,20 +101,20 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
         }
         const user = pricing.getUser();
         const used = new Set();
-        const models = [...new Set(collector.records.map((r) => r.model))].sort().map((m) => {
+        const models = [...new Set(collector.records.map(priceKey))].sort().map((m) => {
           const u = user.find((x) => x.match === pricing.normalize(m)) || null;
           if (u) used.add(u);
-          return { model: m, price: pricing.priceFor(m), user: u };
+          return { model: m, price: effectivePrice(m), user: u };
         });
         return json(res, 200, { models, userOthers: user.filter((u) => !used.has(u)) });
       }
       if (url.pathname === '/api/prices/sync') {
         // 用户点击“联网同步价格”时才会联网；只为当前未计价的模型给出建议值，不自动保存
-        const seen = [...new Set(collector.records.map((r) => r.model))];
+        const seen = [...new Set(collector.records.map(priceKey))];
         const table = await fetchLiteLLM();
         const found = {}, missing = [];
         for (const m of seen) {
-          if (pricing.priceFor(m)) continue;
+          if (effectivePrice(m)) continue;
           const hit = lookupLiteLLM(table, m);
           if (hit) found[m] = hit; else missing.push(m);
         }
@@ -122,10 +128,10 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
         return json(res, 200, plans.resolve(collector.limits));
       }
       if (url.pathname === '/api/export') {
-        const rows = ['time,source,model,session,project,input,output,cache_read,cache_write,cost_usd'];
+        const rows = ['time,source,provider,model,session,project,input,output,cache_read,cache_write,cost_usd'];
         for (const r of collector.records) {
           const c = pricing.costOf(r);
-          rows.push([new Date(r.t).toISOString(), r.src, r.model, r.session, JSON.stringify(r.project), r.in, r.out, r.cr, r.cw5 + r.cw1h, c ? c.cost.toFixed(6) : ''].join(','));
+          rows.push([new Date(r.t).toISOString(), r.src, r.provider || '', r.model, r.session, JSON.stringify(r.project), r.in, r.out, r.cr, r.cw5 + r.cw1h, c ? c.cost.toFixed(6) : ''].join(','));
         }
         res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="token-radar.csv"' });
         return res.end('﻿' + rows.join('\n'));

@@ -57,6 +57,7 @@
   const SRC_META = {
     claude: { mark: '✳', angle: -135 },
     codex: { mark: '◎', angle: -45 },
+    pi: { mark: 'π', angle: 90 },
   };
   const svg = (tag, attrs = {}) => { const el = document.createElementNS(NS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); return el; };
 
@@ -374,6 +375,7 @@
           <span class="ago ${active ? 'active' : ''}">${s.last ? ago(s.last) : '无记录'}</span></div>
         <div class="big">${fmtH(s.tokens)}</div>
         <div class="meta"><span>${s.unpriced && !s.cost ? '未计价' : (plan && plan.subscription ? '等价 ' : '') + usd(s.cost)}</span><span>${s.requests.toLocaleString()} 次请求</span><span>${s.sessions} 个会话</span></div>
+        ${s.providers && s.providers.length ? `<div class="subline">供应商：${s.providers.slice(0, 3).map((p) => `<b>${esc(p.name)}</b> <span class="muted">${esc(p.models.slice(0, 2).join('、'))}</span>`).join(' · ')}</div>` : ''}
         ${subscriptionHTML(s, d)}
         ${quotaHTML(s.limits)}
         <div class="share" title="占比 ${pct(s.tokens / total)}"><i style="width:${(s.tokens / total) * 100}%"></i></div>`;
@@ -450,7 +452,7 @@
     const mm = d.models.slice(0, 8), mMax = mm[0] ? mm[0].tokens : 1;
     $('#modelCount').textContent = d.models.length ? `${d.models.length} 个模型` : '';
     $('#models').innerHTML = rowsHTML(mm, (m) => `
-      <li style="--c:${color(m.src)}"><span class="nm"><i class="sw" style="background:${color(m.src)}"></i>${esc(m.model)}${m.priced ? '' : '<button class="tag" data-pricing>未计价</button>'}</span>
+      <li style="--c:${color(m.src)}"><span class="nm"><i class="sw" style="background:${color(m.src)}"></i>${m.provider ? `<span class="muted">${esc(m.provider)} ·</span>` : ''}${esc(m.model)}${m.priced ? '' : '<button class="tag" data-pricing>未计价</button>'}</span>
       <span class="v">${fmt(m.tokens)}${m.priced ? ' · ' + usd(m.cost) : ''}</span><span class="bar"><i style="width:${(m.tokens / mMax) * 100}%"></i></span></li>`);
 
     const pp = d.projects, pMax = pp[0] ? pp[0].tokens : 1;
@@ -472,7 +474,7 @@
       const when = Date.now() - r.t < 86400e3 ? hms(r.t).slice(0, 5) : md(r.t);
       const tools = r.tools.length ? `<small>${esc(r.tools.slice(0, 3).join(' · '))}</small>` : r.side ? '<small>子代理</small>' : '';
       return `<li class="${isNew ? 'new' : ''}" style="--c:${color(r.src)}" title="${esc(`${new Date(r.t).toLocaleString()}\n新输入 ${fmt(r.in)} · 输出 ${fmt(r.out)} · 缓存读 ${fmt(r.cr)} · 缓存写 ${fmt(r.cw)}\n${r.project}`)}">
-        <i class="d"></i><span class="tm">${when}</span><span class="md">${esc(r.model)}${tools}</span>
+        <i class="d"></i><span class="tm">${when}</span><span class="md">${r.provider ? esc(r.provider) + ' · ' : ''}${esc(r.model)}${tools}</span>
         <span class="tk">${fmt(r.tokens)}<small>${r.cost == null ? '—' : usd(r.cost)}</small></span></li>`;
     }, '这个范围内还没有请求');
     renderLists.seen = new Set(d.recent.map((r) => r.t + r.model + r.tokens));

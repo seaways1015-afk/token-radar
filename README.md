@@ -5,7 +5,7 @@
 <h1 align="center">Token Radar</h1>
 
 <p align="center">
-  实时监控 Claude Code / Codex 的 token 消耗、费用与订阅额度的桌面应用<br />
+  实时监控 Claude Code / Codex / Pi 的 token 消耗、费用与订阅额度的桌面应用<br />
   <sub>Real-time token, cost &amp; quota monitor for Claude Code and Codex — reads local logs, no API key needed.</sub>
 </p>
 
@@ -29,13 +29,14 @@
 |---|---|
 | Claude Code（CLI / 桌面版 / IDE 插件） | `~/.claude/projects/**/*.jsonl`（或 `$CLAUDE_CONFIG_DIR/projects`） |
 | Codex（CLI / 桌面版） | `~/.codex/sessions/**/*.jsonl`（或 `$CODEX_HOME/sessions`） |
+| [Pi](https://github.com/earendil-works/pi)（任意供应商：DeepSeek、OpenRouter、自建中转等） | `~/.pi/agent/sessions/**/*.jsonl`（或 `$PI_CODING_AGENT_DIR/sessions`） |
 
 ## 功能
 
 - **实时消耗**：近 10 分钟 tokens/分钟、近 1 小时费用；外圈 60 根刻度是近 60 分钟逐分钟用量
 - **总 Token / 预估费用**：与上一同期对比（今日对比昨日同一时刻），带趋势小图，显示缓存帮你省下的钱
 - **新输入 / 输出**、**缓存命中率**（读取 ÷ (读取 + 新输入 + 写入)）
-- **Agent 工具卡片**：套餐、本月折算、额度；点击后整个面板只看该工具的数据
+- **Agent 工具卡片**：套餐、本月折算、额度，Pi 还会显示用到的供应商和模型；点击后整个面板只看该工具的数据
 - 用量趋势（按工具堆叠）、模型分布、项目 Top、工具调用 Top、最近请求流
 - **计费设置**（右上角 `$`）
   - 「自动扫描」：识别当前订阅并填入月费
@@ -87,6 +88,8 @@ Claude Code 的日志里没有额度使用率，所以 Claude 只显示折算费
 - 前端是纯 HTML/CSS/SVG，没有框架依赖；`electron/` 只是一层无边框窗口 + 托盘外壳
 
 费用是按公开 API 价格估算的等价成本，仅供参考；订阅用户的实际账单以官方为准。
+
+Pi 的费用：如果你在 pi 的 `models.json` 里给模型配置了 `cost`，直接使用 pi 记录的费用；否则按本应用的价格表计算（可联网同步或手动填写，也支持按 `供应商/模型` 单独定价）。
 
 欢迎 PR，比如接入更多工具（Gemini CLI、Cursor 等）：在 `server/collector.js` 里加一个解析函数即可。
 

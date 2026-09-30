@@ -45,8 +45,10 @@ function priceFor(model) {
 
 // 返回 { cost, saved }；未知模型返回 null
 function costOf(r) {
-  const p = priceFor(r.model);
+  const p = (r.provider && priceFor(r.provider + '/' + r.model)) || priceFor(r.model);
+  if (!p && r.pc) return { cost: r.pc, saved: 0 };
   if (!p) return null;
+  if (r.pc) return { cost: r.pc, saved: r.cr * (p.input - p.cacheRead) / 1e6 };
   const mult = r.fast ? BUILTIN.fastModeMultiplier : 1;
   const cost = (r.in * p.input + r.out * p.output + r.cr * p.cacheRead + r.cw5 * p.cacheWrite5m + r.cw1h * p.cacheWrite1h) / 1e6 * mult;
   const saved = r.cr * (p.input - p.cacheRead) / 1e6 * mult;

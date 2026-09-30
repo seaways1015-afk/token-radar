@@ -57,14 +57,19 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
 
   for (let i = lowerBound(rs, b.start); i < rs.length && rs[i].t <= end; i++) {
     const r = rs[i];
-    const s = bySrc[r.src] || (bySrc[r.src] = { ...blank(), last: 0 });
+    const s = bySrc[r.src] || (bySrc[r.src] = { ...blank(), last: 0, providers: {} });
     acc(s, r); s.last = Math.max(s.last, r.t);
+    if (r.provider) {
+      const pv = s.providers[r.provider] || (s.providers[r.provider] = { name: r.provider, tokens: 0, models: new Set() });
+      pv.tokens += tok(r); pv.models.add(r.model);
+    }
     if (!match(r)) continue;
     const c = acc(cur, r);
     const k = Math.min(nb - 1, Math.floor((r.t - b.start) / b.bucket));
     series[k].tokens += tok(r); series[k].cost += c ? c.cost : 0;
     series[k].bySrc[r.src] = (series[k].bySrc[r.src] || 0) + tok(r);
-    const m = byModel[r.model] || (byModel[r.model] = { model: r.model, src: r.src, tokens: 0, cost: 0, requests: 0, priced: !!c });
+    const mk = r.provider ? r.provider + '/' + r.model : r.model;
+    const m = byModel[mk] || (byModel[mk] = { model: r.model, provider: r.provider || '', src: r.src, tokens: 0, cost: 0, requests: 0, priced: !!c });
     m.tokens += tok(r); m.requests++; if (c) m.cost += c.cost;
     const pk = r.project || '(未知)';
     const p = byProject[pk] || (byProject[pk] = { project: pk, tokens: 0, cost: 0, unpriced: 0, requests: 0, sessions: new Set(), last: 0 });
@@ -100,7 +105,7 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
     if (r.t < b.start) break;
     if (!match(r)) continue;
     const c = costOf(r);
-    recent.push({ t: r.t, src: r.src, model: r.model, tokens: tok(r), in: r.in, out: r.out, cr: r.cr, cw: r.cw5 + r.cw1h, cost: c ? c.cost : null, tools: r.tools || [], project: r.project, side: r.side });
+    recent.push({ t: r.t, src: r.src, model: r.model, provider: r.provider || '', tokens: tok(r), in: r.in, out: r.out, cr: r.cr, cw: r.cw5 + r.cw1h, cost: c ? c.cost : null, tools: r.tools || [], project: r.project, side: r.side });
   }
 
   // 本月（自然月）按 API 价折算的等价费用，用于和订阅月费比较
@@ -117,8 +122,10 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
 
   const sources = Object.keys(SOURCES).map((k) => {
     const s = bySrc[k];
+    const providers = s ? Object.values(s.providers).map((p) => ({ name: p.name, tokens: p.tokens, models: [...p.models] })).sort((a, b) => b.tokens - a.tokens) : [];
+    if (s) delete s.providers;
     return {
-      id: k, label: SOURCES[k].label, ...(s ? fin(s) : fin({ ...blank(), last: 0 })),
+      id: k, label: SOURCES[k].label, ...(s ? fin(s) : fin({ ...blank(), last: 0 })), providers,
       plan: plans[k] || null,
       limits: limits[k] || null,
       month: month[k] || { cost: 0, unpriced: 0, tokens: 0 },

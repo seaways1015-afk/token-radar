@@ -1,4 +1,4 @@
-// 日志采集器：增量读取 Claude Code / Codex 的本地 JSONL 会话日志，归一化成请求记录。
+// 日志采集器：增量读取 Claude Code / Codex / Pi 的本地 JSONL 会话日志，归一化成请求记录。
 // 每个文件只记录已消费的字节偏移，追加写入时只读新增部分；解析结果缓存到磁盘，重启秒开。
 const fs = require('fs');
 const fsp = fs.promises;
@@ -16,6 +16,7 @@ const SOURCES = {
     ? path.join(process.env.CLAUDE_CONFIG_DIR, 'projects')
     : path.join(os.homedir(), '.claude', 'projects') },
   codex: { label: 'Codex', dir: () => path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions') },
+  pi: { label: 'Pi', dir: () => path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent'), 'sessions') },
 };
 
 async function walkJsonl(dir, out = []) {
@@ -168,7 +169,7 @@ class Collector extends EventEmitter {
     let f = this.files.get(p);
     if (f && f.size === st.size && f.mtimeMs === st.mtimeMs) return;
     if (!f) { f = { offset: 0, size: 0, mtimeMs: 0, src, st: {} }; this.files.set(p, f); }
-    const parse = src === 'claude' ? this.parseClaude : this.parseCodex;
+    const parse = src === 'claude' ? this.parseClaude : src === 'pi' ? this.parsePi : this.parseCodex;
     const { offset, size } = await readLines(p, f.offset, (data, s, e) => parse.call(this, data, s, e, f.st, p, added));
     f.offset = offset; f.size = size; f.mtimeMs = st.mtimeMs;
   }
@@ -224,6 +225,54 @@ class Collector extends EventEmitter {
       if (tools.length) rec.tools = tools;
     }
     if (rec.in + rec.out + rec.cr + rec.cw5 + rec.cw1h === 0) return;
+    this.add(rec, added);
+  }
+
+  // ---------- Pi（pi-coding-agent，支持 DeepSeek 等任意供应商）----------
+  // usage.input 不含缓存命中；usage.cost 是 pi 按自己的模型配置算好的费用（未配置价格时为 0）
+  parsePi(data, s, e, st, file, added) {
+    const h = head(data, s, e, 200);
+    const isSession = h.indexOf('"type":"session"') !== -1;
+    const isCompaction = h.indexOf('"type":"compaction"') !== -1;
+    if (!isSession && !isCompaction && !(h.indexOf('"type":"message"') !== -1 && has(data, s, e, '"role":"assistant"') && has(data, s, e, '"usage"'))) return;
+    let d;
+    try { d = JSON.parse(data.toString('utf8', s, e)); } catch { return; }
+    if (d.type === 'session') { st.session = d.id || st.session; st.cwd = d.cwd || st.cwd; return; }
+    let u, m = null;
+    if (d.type === 'compaction') {
+      u = d.usage; // 压缩上下文时生成摘要的那次调用
+    } else {
+      m = d.message;
+      if (!m || m.role !== 'assistant') return;
+      u = m.usage;
+      st.model = m.model || st.model;
+      st.provider = m.provider || st.provider;
+    }
+    if (!u) return;
+    const rec = {
+      // 分叉会话会复制历史条目：优先按 responseId 去重，其次按条目 id + 时间
+      id: 'p:' + ((m && m.responseId) || (d.type === 'compaction' ? 'c:' : '') + d.id + ':' + d.timestamp),
+      t: Date.parse(d.timestamp) || (m && m.timestamp) || Date.now(),
+      src: 'pi',
+      model: (m && m.model) || st.model || 'unknown',
+      provider: (m && m.provider) || st.provider || '',
+      session: st.session || path.basename(file, '.jsonl'),
+      project: st.cwd || '',
+      in: num(u.input),
+      out: num(u.output),
+      cr: num(u.cacheRead),
+      cw5: num(u.cacheWrite),
+      cw1h: 0,
+      fast: 0,
+      side: d.type === 'compaction' ? 1 : 0,
+    };
+    const pc = u.cost && num(u.cost.total);
+    if (pc > 0) rec.pc = pc;
+    if (m && Array.isArray(m.content)) {
+      const tools = m.content.filter((c) => c && c.type === 'toolCall' && c.name).map((c) => c.name);
+      if (tools.length) rec.tools = tools;
+    }
+    if (rec.in + rec.out + rec.cr + rec.cw5 === 0) return;
     this.add(rec, added);
   }
 
