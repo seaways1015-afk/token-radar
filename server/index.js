@@ -8,6 +8,7 @@ const pricing = require('./pricing');
 const plans = require('./plans');
 const tools = require('./tools');
 const { Alerts } = require('./alerts');
+const { insights } = require('./insights');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -130,6 +131,10 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
           return { model: m, price: effectivePrice(m), user: u };
         });
         return json(res, 200, { models, userOthers: user.filter((u) => !used.has(u)) });
+      }
+      if (url.pathname === '/api/insights') {
+        if (!collector.ready) return json(res, 200, { items: [] });
+        return json(res, 200, { items: insights({ records: collector.records, plans: plans.resolve(collector.limits), limitHist: collector.getLimitHist('codex'), limits: collector.limits }) });
       }
       if (url.pathname === '/api/alerts') {
         if (req.method === 'POST') alerts.setConfig(await readBody(req));

@@ -380,3 +380,14 @@ td.filled input { border-color: var(--accent); }
 @keyframes toastIn { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
 .quota .qr.soon { color: #d0453a; font-weight: 600; }
 .toasts[popover] { inset: auto 18px 18px auto; margin: 0; border: 0; padding: 0; background: transparent; overflow: visible; }
+
+/* ---------- 洞察 ---------- */
+.insights { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.insight { display: grid; grid-template-columns: 30px 1fr; gap: 12px; padding: 16px 18px; }
+.insight .ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 15px; font-family: var(--serif); }
+.insight.good .ic { background: color-mix(in srgb, #3f8f4a 18%, transparent); color: #3f8f4a; }
+.insight.warn .ic { background: color-mix(in srgb, #c98a12 20%, transparent); color: #b07a0c; }
+.insight.info .ic { background: var(--chip); color: var(--ink-2); }
+.insight h4 { margin: 3px 0 4px; font-size: 14px; font-weight: 600; }
+.insight p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--ink-2); }
+.insight .lv { font-size: 11px; color: var(--ink-3); margin-left: 6px; font-weight: 400; }

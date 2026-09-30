@@ -590,6 +590,18 @@
     refresh();
   }
 
+  // ---------- 洞察 ----------
+  const LEVEL = { good: ['✓', '划算'], warn: ['!', '注意'], info: ['i', '参考'] };
+  async function loadInsights() {
+    try {
+      const r = await fetch('/api/insights').then((x) => x.json());
+      $('#insights').innerHTML = r.items.length ? r.items.map((x) => `
+        <article class="card insight ${x.level}"><span class="ic" aria-hidden="true">${LEVEL[x.level][0]}</span>
+          <div><h4>${esc(x.title)}<span class="lv">${LEVEL[x.level][1]}</span></h4><p>${esc(x.body)}</p></div></article>`).join('')
+        : '<p class="muted">数据还不够多，用一段时间后这里会出现结论。</p>';
+    } catch { /* 下次再试 */ }
+  }
+
   // ---------- 提醒 ----------
   function toast(a) {
     const el = document.createElement('div');
@@ -694,5 +706,7 @@
   refresh();
   setInterval(refresh, 15000); // 让“近 10 分钟”等滑动窗口自然衰减
   loadTools();
-  setInterval(loadTools, 60000); // 定时重新扫描，新装的工具会自动出现
+  setInterval(loadTools, 60000);
+  loadInsights();
+  setInterval(loadInsights, 60000); // 定时重新扫描，新装的工具会自动出现
 })();
