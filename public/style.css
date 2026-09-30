@@ -412,3 +412,38 @@ td.filled input { border-color: var(--accent); }
 .bill { font-size: 10.5px; padding: 0 6px; border-radius: 5px; line-height: 17px; }
 .bill.sub { background: var(--chip); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
 .bill.paid { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--ink); }
+
+/* ---------- 排版调整：体检合并为一张卡片、工具卡片单行等高、本机工具折叠 ---------- */
+.checkup { padding: 8px 24px; }
+.insights { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr)); column-gap: 40px; }
+.insights > li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.insights > li.muted { display: block; border: 0; }
+.insight .ic { width: 26px; height: 26px; font-size: 13px; }
+.insight h4 { margin: 2px 0 3px; }
+.insight p { font-size: 12.5px; line-height: 1.6; }
+
+.sources { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+.src { display: flex; flex-direction: column; padding: 16px 18px; }
+.src .top { gap: 8px; min-width: 0; }
+.src .name { overflow: hidden; text-overflow: ellipsis; }
+.src .logo { width: 26px; height: 26px; border-radius: 8px; font-size: 13px; flex: none; }
+.src .big { font-size: 28px; margin: 10px 0 2px; }
+.src .meta { gap: 4px 10px; font-size: 12.5px; }
+.src .subline { font-size: 12px; line-height: 1.55; }
+/* 占比条贴底，前一个元素与它保持固定间距，这样同一行卡片等高时底边对齐 */
+.src .share { margin-top: auto; }
+.src > :nth-last-child(2) { margin-bottom: 14px; }
+.quota { grid-template-columns: 58px minmax(30px, 1fr) 34px; row-gap: 1px; }
+.quota .qr { grid-column: 2 / -1; font-size: 11px; }
+
+.discover { margin-top: 12px; padding: 0; background: none; border: 0; box-shadow: none; }
+.discover > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 10px 4px; font-size: 13px; }
+.discover > summary::-webkit-details-marker { display: none; }
+.discover .disc-title { font-weight: 600; }
+.discover .disc-more { margin-left: auto; color: var(--accent); font-size: 12px; }
+.discover[open] .disc-more { font-size: 0; }
+.discover[open] .disc-more::after { content: "收起"; font-size: 12px; }
+.discover .disc-body { background: var(--card); border: 1px solid var(--card-border); border-radius: 18px; padding: 16px 18px; box-shadow: var(--shadow); }
+.discover .disc-foot { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.discover .disc-foot .btn { margin-left: auto; flex: none; }
+.discover .absent { margin-top: 0; }

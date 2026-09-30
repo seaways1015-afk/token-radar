@@ -374,6 +374,8 @@
     const total = d.sources.reduce((a, s) => a + s.tokens, 0) || 1;
     host.innerHTML = '';
     for (const s of d.sources) {
+      // 从没产生过数据的工具（例如刚装好）只在“本机工具”里列出，不单独占一张卡片
+      if (!s.requests && state.toolStatus && state.toolStatus[s.id] !== 'monitoring') continue;
       const on = state.src === s.id;
       const b = document.createElement('button');
       b.className = 'card src' + (on ? ' on' : state.src !== 'all' ? ' dim' : '');
@@ -634,9 +636,9 @@
     try {
       const r = await fetch('/api/insights').then((x) => x.json());
       $('#insights').innerHTML = r.items.length ? r.items.map((x) => `
-        <article class="card insight ${x.level}"><span class="ic" aria-hidden="true">${LEVEL[x.level][0]}</span>
-          <div><h4>${esc(x.title)}<span class="lv">${LEVEL[x.level][1]}</span></h4><p>${esc(x.body)}</p></div></article>`).join('')
-        : '<p class="muted">数据还不够多，用一段时间后这里会出现结论。</p>';
+        <li class="insight ${x.level}"><span class="ic" aria-hidden="true">${LEVEL[x.level][0]}</span>
+          <div><h4>${esc(x.title)}<span class="lv">${LEVEL[x.level][1]}</span></h4><p>${esc(x.body)}</p></div></li>`).join('')
+        : '<li class="muted">数据还不够多，用一段时间后这里会出现结论。</li>';
     } catch { /* 下次再试 */ }
   }
 
@@ -675,7 +677,10 @@
       const order = { monitoring: 0, ready: 1, unsupported: 2 };
       const list = r.tools.slice().sort((a, b) => order[a.status] - order[b.status]);
       const mon = list.filter((t) => t.status === 'monitoring').length;
-      $('#discSummary').textContent = `发现 ${list.length} 个 · 监控中 ${mon} 个 · ${new Date(r.scannedAt).toLocaleTimeString()} 扫描`;
+      const ready = list.filter((t) => t.status === 'ready').map((t) => t.name);
+      state.toolStatus = Object.fromEntries(list.map((t) => [t.id, t.status]));
+      if (state.data) renderSources(state.data);
+      $('#discSummary').textContent = `发现 ${list.length} 个，监控中 ${mon} 个${ready.length ? `，${ready.join('、')} 已接入、等待数据` : ''} · ${new Date(r.scannedAt).toLocaleTimeString()} 扫描`;
       $('#toolChips').innerHTML = list.map((t) => {
         const where = [t.dir, t.bin].filter(Boolean).join('\n');
         const tip = `${t.name}（${t.vendor}）\n${TOOL_STATUS[t.status]}${t.requests ? ` · ${t.requests.toLocaleString()} 次请求` : ''}${t.note ? '\n' + t.note : ''}${where ? '\n' + where : ''}`;
