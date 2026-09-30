@@ -1,10 +1,11 @@
-// 日志采集器：增量读取 Claude Code / Codex / Pi 的本地 JSONL 会话日志，归一化成请求记录。
+// 日志采集器：增量读取 Claude Code / Codex / Pi / DeepSeek Harness 的 JSONL 会话日志和 OpenCode 的 SQLite 数据库，归一化成请求记录。
 // 每个文件只记录已消费的字节偏移，追加写入时只读新增部分；解析结果缓存到磁盘，重启秒开。
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const os = require('os');
 const { EventEmitter } = require('events');
+const zlib = require('zlib');
 const { dataFile } = require('./paths');
 
 const CACHE_VERSION = 4;
@@ -17,6 +18,8 @@ const SOURCES = {
     : path.join(os.homedir(), '.claude', 'projects') },
   codex: { label: 'Codex', dir: () => path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions') },
   pi: { label: 'Pi', dir: () => path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent'), 'sessions') },
+  opencode: { label: 'OpenCode', kind: 'sqlite', dir: () => path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'opencode'), db: 'opencode.db' },
+  dsh: { label: 'DeepSeek Harness', dir: () => path.join(os.homedir(), '.dsh', 'sessions') },
 };
 
 async function walkJsonl(dir, out = []) {
@@ -25,7 +28,7 @@ async function walkJsonl(dir, out = []) {
   for (const e of ents) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) await walkJsonl(p, out);
-    else if (e.name.endsWith('.jsonl')) out.push(p);
+    else if (e.name.endsWith('.jsonl') || e.name.endsWith('.jsonl.zstd')) out.push(p);
   }
   return out;
 }
@@ -57,6 +60,21 @@ async function readLines(file, start, onLine) {
 }
 
 const head = (data, s, e, n = 320) => data.toString('utf8', s, Math.min(e, s + n));
+function normalizeUsage(u) {
+  if (!u || typeof u !== 'object') return null;
+  if ('input' in u || 'output' in u) { // pi 风格：input 不含缓存命中
+    return { in: num(u.input), out: num(u.output), cr: num(u.cacheRead), cw5: num(u.cacheWrite), ...(u.cost && num(u.cost.total) > 0 ? { pc: u.cost.total } : {}) };
+  }
+  if ('input_tokens' in u) { // Anthropic 风格
+    return { in: num(u.input_tokens), out: num(u.output_tokens), cr: num(u.cache_read_input_tokens), cw5: num(u.cache_creation_input_tokens) };
+  }
+  if ('prompt_tokens' in u) { // OpenAI / DeepSeek API：prompt_tokens 包含缓存命中
+    const cached = num(u.prompt_cache_hit_tokens) || num(u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens);
+    return { in: Math.max(0, num(u.prompt_tokens) - cached), out: num(u.completion_tokens), cr: cached, cw5: 0 };
+  }
+  return null;
+}
+
 const has = (data, s, e, str) => { const i = data.indexOf(str, s); return i !== -1 && i < e; };
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
@@ -70,6 +88,7 @@ class Collector extends EventEmitter {
     this.ready = false;
     this.scanning = false;
     this.limits = {};      // 各工具最近一次上报的额度信息（目前只有 Codex 会写入日志）
+    this.cursors = {};     // 数据库类来源的增量游标
   }
 
   // ---------- 缓存 ----------
@@ -79,6 +98,7 @@ class Collector extends EventEmitter {
       if (raw.v !== CACHE_VERSION) return;
       for (const r of raw.records) { this.records.push(r); this.byId.set(r.id, r); }
       for (const [p, f] of Object.entries(raw.files)) this.files.set(p, f);
+      this.cursors = raw.cursors || {};
       this.limits = raw.limits || {};
     } catch { /* 首次运行或缓存损坏：全量扫描 */ }
   }
@@ -91,7 +111,7 @@ class Collector extends EventEmitter {
   async saveCache() {
     await fsp.mkdir(path.dirname(this.cacheFile), { recursive: true });
     const tmp = this.cacheFile + '.tmp';
-    await fsp.writeFile(tmp, JSON.stringify({ v: CACHE_VERSION, records: this.records, files: Object.fromEntries(this.files), limits: this.limits }));
+    await fsp.writeFile(tmp, JSON.stringify({ v: CACHE_VERSION, records: this.records, files: Object.fromEntries(this.files), limits: this.limits, cursors: this.cursors }));
     await fsp.rename(tmp, this.cacheFile);
   }
 
@@ -99,11 +119,13 @@ class Collector extends EventEmitter {
   async start() {
     await this.loadCache();
     await this.fullScan();
+    await this.pollOpencode();
     this.ready = true;
     this.emit('ready');
     this.saveCacheSoon();
 
     for (const [src, def] of Object.entries(SOURCES)) {
+      if (def.kind === 'sqlite') continue;
       try {
         fs.watch(def.dir(), { recursive: true }, (_, name) => {
           if (name && String(name).endsWith('.jsonl')) this.markDirty(path.join(def.dir(), String(name)), src);
@@ -112,7 +134,7 @@ class Collector extends EventEmitter {
     }
     this.dirty = new Map();
     // 热文件（最近 15 分钟改过的）高频轮询；全量目录扫描低频兜底
-    this._hot = setInterval(() => this.pollHot(), 1500);
+    this._hot = setInterval(() => { this.pollHot(); this.pollOpencode(); }, 1500);
     this._full = setInterval(() => this.fullScan(), 30000);
   }
 
@@ -139,7 +161,7 @@ class Collector extends EventEmitter {
   async fullScan() {
     const list = [];
     for (const [src, def] of Object.entries(SOURCES)) {
-      for (const p of await walkJsonl(def.dir())) list.push({ p, src });
+      if (def.kind !== 'sqlite') for (const p of await walkJsonl(def.dir())) list.push({ p, src });
     }
     await this.run(list);
   }
@@ -169,8 +191,18 @@ class Collector extends EventEmitter {
     let f = this.files.get(p);
     if (f && f.size === st.size && f.mtimeMs === st.mtimeMs) return;
     if (!f) { f = { offset: 0, size: 0, mtimeMs: 0, src, st: {} }; this.files.set(p, f); }
-    const parse = src === 'claude' ? this.parseClaude : src === 'pi' ? this.parsePi : this.parseCodex;
-    const { offset, size } = await readLines(p, f.offset, (data, s, e) => parse.call(this, data, s, e, f.st, p, added));
+    const parse = { claude: this.parseClaude, pi: this.parsePi, dsh: this.parseGeneric }[src] || this.parseCodex;
+    const onLine = (data, s, e) => parse.call(this, data, s, e, f.st, p, added);
+    if (p.endsWith('.zstd')) {
+      // 压缩文件无法从中间续读：变化后整体解压重读，靠 id 去重
+      const data = zlib.zstdDecompressSync(await fsp.readFile(p));
+      let s0 = 0, i;
+      while ((i = data.indexOf(NL, s0)) !== -1) { if (i > s0) onLine(data, s0, i); s0 = i + 1; }
+      if (s0 < data.length) onLine(data, s0, data.length);
+      f.offset = f.size = st.size; f.mtimeMs = st.mtimeMs;
+      return;
+    }
+    const { offset, size } = await readLines(p, f.offset, onLine);
     f.offset = offset; f.size = size; f.mtimeMs = st.mtimeMs;
   }
 
@@ -178,7 +210,7 @@ class Collector extends EventEmitter {
     const old = this.byId.get(rec.id);
     if (old) {
       // 同一条消息被拆成多行写入（每个内容块一行）：取最大值，合并工具名
-      for (const k of ['in', 'out', 'cr', 'cw5', 'cw1h']) old[k] = Math.max(old[k], rec[k]);
+      for (const k of ['in', 'out', 'cr', 'cw5', 'cw1h', 'pc']) if (rec[k] != null) old[k] = Math.max(old[k] || 0, rec[k]);
       if (rec.tools) old.tools = [...new Set([...(old.tools || []), ...rec.tools])];
       return;
     }
@@ -274,6 +306,101 @@ class Collector extends EventEmitter {
     }
     if (rec.in + rec.out + rec.cr + rec.cw5 === 0) return;
     this.add(rec, added);
+  }
+
+  // ---------- 通用解析（DeepSeek Harness 等 pi 风格日志）----------
+  // 兼容三种 usage 字段命名：pi / OpenAI（DeepSeek API）/ Anthropic
+  parseGeneric(data, s, e, st, file, added) {
+    const h = head(data, s, e, 200);
+    const isSession = h.indexOf('"type":"session"') !== -1;
+    if (!isSession && !has(data, s, e, 'usage')) return;
+    let d;
+    try { d = JSON.parse(data.toString('utf8', s, e)); } catch { return; }
+    if (d.type === 'session') { st.session = d.id || st.session; st.cwd = d.cwd || st.cwd; return; }
+    const m = d.message && typeof d.message === 'object' ? d.message : d;
+    if (m.role && m.role !== 'assistant') return;
+    const u = normalizeUsage(m.usage || d.usage || (d.response && d.response.usage));
+    if (!u) return;
+    st.model = m.model || d.model || st.model;
+    st.provider = m.provider || d.provider || st.provider;
+    const tsv = d.timestamp || m.timestamp || d.createdAt;
+    const rec = {
+      id: 'g:' + (m.responseId || m.id || d.id || '') + ':' + tsv,
+      t: typeof tsv === 'number' ? tsv : Date.parse(tsv) || Date.now(),
+      src: 'dsh', model: st.model || 'unknown', provider: st.provider || '',
+      session: st.session || path.basename(path.dirname(file)), project: st.cwd || '',
+      ...u, cw1h: 0, fast: 0, side: d.type === 'compaction' ? 1 : 0,
+    };
+    if (Array.isArray(m.content)) {
+      const tools = m.content.filter((c) => c && (c.type === 'toolCall' || c.type === 'tool_use') && c.name).map((c) => c.name);
+      if (tools.length) rec.tools = tools;
+    }
+    if (rec.in + rec.out + rec.cr + rec.cw5 === 0) return;
+    this.add(rec, added);
+  }
+
+  // ---------- OpenCode（SQLite，只读打开，按 time_updated 增量查询）----------
+  async pollOpencode() {
+    const def = SOURCES.opencode;
+    const file = path.join(def.dir(), def.db);
+    if (this._ocBusy) return;
+    this._ocBusy = true;
+    const added = [];
+    try {
+      const st = await fsp.stat(file).catch(() => null);
+      const wal = await fsp.stat(file + '-wal').catch(() => null);
+      const sig = st ? st.mtimeMs + ':' + st.size + ':' + (wal ? wal.mtimeMs + ':' + wal.size : '') : null;
+      if (!sig || sig === this._ocSig) return;
+      this._ocSig = sig;
+      if (!this._oc) {
+        const { DatabaseSync } = require('node:sqlite');
+        this._oc = new DatabaseSync(file, { readOnly: true });
+      }
+      const since = this.cursors.opencode || 0;
+      const rows = this._oc.prepare(`select m.id, m.session_id, m.time_updated, m.data, s.directory
+        from message m left join session s on s.id = m.session_id
+        where m.time_updated > ? and json_extract(m.data, '$.role') = 'assistant' order by m.time_updated`).all(since);
+      if (!rows.length) return;
+      const tools = new Map();
+      for (const r of this._oc.prepare(`select message_id, json_extract(data, '$.tool') tool from part
+        where time_updated > ? and json_extract(data, '$.type') = 'tool'`).all(Math.max(0, since - 60e3))) {
+        if (!tools.has(r.message_id)) tools.set(r.message_id, []);
+        tools.get(r.message_id).push(r.tool);
+      }
+      let max = since;
+      for (const row of rows) {
+        max = Math.max(max, row.time_updated);
+        let d;
+        try { d = JSON.parse(row.data); } catch { continue; }
+        const tk = d.tokens || {};
+        const cache = tk.cache || {};
+        const rec = {
+          id: 'o:' + row.id,
+          t: (d.time && d.time.created) || row.time_updated,
+          src: 'opencode', model: d.modelID || 'unknown', provider: d.providerID || '',
+          session: row.session_id, project: row.directory || '',
+          // opencode 的 output 不含 reasoning，这里合并为输出
+          in: num(tk.input), out: num(tk.output) + num(tk.reasoning), cr: num(cache.read), cw5: num(cache.write), cw1h: 0,
+          fast: 0, side: d.summary ? 1 : 0,
+        };
+        if (num(d.cost) > 0) rec.pc = d.cost;
+        if (tools.has(row.id)) rec.tools = tools.get(row.id);
+        if (rec.in + rec.out + rec.cr + rec.cw5 === 0) continue;
+        this.add(rec, added);
+      }
+      this.cursors.opencode = max;
+    } catch (e) {
+      // 数据库被锁或版本不兼容：关掉句柄，下次重试
+      try { if (this._oc) this._oc.close(); } catch { /* ignore */ }
+      this._oc = null; this._ocSig = null;
+    } finally {
+      this._ocBusy = false;
+    }
+    if (added.length) {
+      this.records.sort((a, b) => a.t - b.t);
+      if (this.ready) this.emit('records', added);
+      this.saveCacheSoon();
+    }
   }
 
   // ---------- Codex ----------

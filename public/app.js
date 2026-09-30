@@ -53,11 +53,13 @@
     if (size < 86400e3 && d.getHours() !== 0) return `${pad(d.getHours())}:00`;
     return md(t);
   }
-  const color = (src) => `var(--c-${src === 'claude' || src === 'codex' ? src : 'other'})`;
+  const color = (src) => `var(--c-${src}, var(--c-other))`;
   const SRC_META = {
     claude: { mark: '✳', angle: -135 },
     codex: { mark: '◎', angle: -45 },
     pi: { mark: 'π', angle: 90 },
+    opencode: { mark: '▢', angle: 180 },
+    dsh: { mark: 'D', angle: 0 },
   };
   const svg = (tag, attrs = {}) => { const el = document.createElementNS(NS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); return el; };
 
@@ -574,6 +576,28 @@
     refresh();
   }
 
+  // ---------- 本机工具扫描 ----------
+  const TOOL_STATUS = { monitoring: '监控中', ready: '已接入 · 暂无数据', unsupported: '不支持用量' };
+  async function loadTools(rescan) {
+    try {
+      const r = await fetch('/api/tools' + (rescan ? '?rescan=1' : '')).then((x) => x.json());
+      const order = { monitoring: 0, ready: 1, unsupported: 2 };
+      const list = r.tools.slice().sort((a, b) => order[a.status] - order[b.status]);
+      const mon = list.filter((t) => t.status === 'monitoring').length;
+      $('#discSummary').textContent = `发现 ${list.length} 个 · 监控中 ${mon} 个 · ${new Date(r.scannedAt).toLocaleTimeString()} 扫描`;
+      $('#toolChips').innerHTML = list.map((t) => {
+        const where = [t.dir, t.bin].filter(Boolean).join('\n');
+        const tip = `${t.name}（${t.vendor}）\n${TOOL_STATUS[t.status]}${t.requests ? ` · ${t.requests.toLocaleString()} 次请求` : ''}${t.note ? '\n' + t.note : ''}${where ? '\n' + where : ''}`;
+        return `<span class="tool-chip ${t.status}" style="--c:${color(t.id)}" title="${esc(tip)}"><i class="dot"></i>${esc(t.name)}<span class="st">${TOOL_STATUS[t.status]}</span></span>`;
+      }).join('');
+      $('#toolAbsent').textContent = r.absent.length ? `未发现：${r.absent.join('、')}` : '';
+      // 新装的工具出现时，工具卡片也要跟着刷新
+      const key = list.map((t) => t.id + t.status).join();
+      if (loadTools.key && loadTools.key !== key) refresh();
+      loadTools.key = key;
+    } catch { $('#discSummary').textContent = '扫描失败'; }
+  }
+
   // ---------- 主题 ----------
   function applyTheme(t) {
     document.documentElement.dataset.theme = t;
@@ -601,6 +625,7 @@
     $('#pricingSave').onclick = () => { savePricing(); };
     $('#btnScanPlans').onclick = scanPlans;
     $('#btnSyncPrices').onclick = syncPrices;
+    $('#btnRescan').onclick = async () => { $('#discSummary').textContent = '扫描中…'; await loadTools(true); refresh(); };
     $('#btnTheme').onclick = () => {
       const t = effectiveDark() ? 'light' : 'dark';
       save('tp-theme', t); applyTheme(t); if (state.data) render(state.data);
@@ -621,4 +646,6 @@
   connect();
   refresh();
   setInterval(refresh, 15000); // 让“近 10 分钟”等滑动窗口自然衰减
+  loadTools();
+  setInterval(loadTools, 60000); // 定时重新扫描，新装的工具会自动出现
 })();

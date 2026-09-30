@@ -43,7 +43,7 @@ function acc(a, r) {
 
 function fin(a) { const { sessions, ...o } = a; o.sessions = sessions.size; return o; }
 
-function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), plans = {}, limits = {} } = {}) {
+function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), plans = {}, limits = {}, visible = null } = {}) {
   const match = src === 'all' ? () => true : (r) => r.src === src;
   const rs = allRecords;
   const b = rangeBounds(range, now, rs);
@@ -120,7 +120,7 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
   }
   const dayOfMonth = (now - som.getTime()) / DAY;
 
-  const sources = Object.keys(SOURCES).map((k) => {
+  const sources = Object.keys(SOURCES).filter((k) => !visible || visible.includes(k) || bySrc[k]).map((k) => {
     const s = bySrc[k];
     const providers = s ? Object.values(s.providers).map((p) => ({ name: p.name, tokens: p.tokens, models: [...p.models] })).sort((a, b) => b.tokens - a.tokens) : [];
     if (s) delete s.providers;

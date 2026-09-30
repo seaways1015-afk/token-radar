@@ -44,7 +44,10 @@ function priceFor(model) {
 }
 
 // 返回 { cost, saved }；未知模型返回 null
+const FREE = /(^|[-:/])free$/i;
+
 function costOf(r) {
+  if (FREE.test(r.model)) return { cost: r.pc || 0, saved: 0 };
   const p = (r.provider && priceFor(r.provider + '/' + r.model)) || priceFor(r.model);
   if (!p && r.pc) return { cost: r.pc, saved: 0 };
   if (!p) return null;

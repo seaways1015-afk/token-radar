@@ -6,6 +6,7 @@ const { Collector } = require('./collector');
 const { summary, tok } = require('./stats');
 const pricing = require('./pricing');
 const plans = require('./plans');
+const tools = require('./tools');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -42,6 +43,17 @@ function lookupLiteLLM(table, model) {
   };
 }
 
+// 本机工具扫描结果缓存 30 秒（检查目录和 PATH，开销不大但没必要每次请求都做）
+let toolScan = null;
+function scanTools(force) {
+  if (!force && toolScan && Date.now() - toolScan.t < 30e3) return toolScan.list;
+  const counts = {};
+  for (const r of collectorRef.records) counts[r.src] = (counts[r.src] || 0) + 1;
+  toolScan = { t: Date.now(), list: tools.scan(counts) };
+  return toolScan.list;
+}
+let collectorRef = { records: [] };
+
 const priceKey = (r) => (r.provider ? r.provider + '/' + r.model : r.model);
 // 与 costOf 一致：先按“供应商/模型”，再按模型名
 const effectivePrice = (k) => pricing.priceFor(k) || (k.includes('/') ? pricing.priceFor(k.slice(k.lastIndexOf('/') + 1)) : null);
@@ -62,6 +74,7 @@ function readBody(req) {
 
 async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
   const collector = new Collector();
+  collectorRef = collector;
   const clients = new Set();
 
   collector.on('records', (added) => {
@@ -82,6 +95,8 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
           src: url.searchParams.get('src') || 'all',
           plans: plans.resolve(collector.limits),
           limits: collector.limits,
+          // 只显示本机装了、或者已经有数据的工具
+          visible: scanTools().filter((t) => t.status !== 'absent').map((t) => t.id),
         }));
       }
       if (url.pathname === '/api/events') {
@@ -107,6 +122,10 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
           return { model: m, price: effectivePrice(m), user: u };
         });
         return json(res, 200, { models, userOthers: user.filter((u) => !used.has(u)) });
+      }
+      if (url.pathname === '/api/tools') {
+        const list = scanTools(url.searchParams.has('rescan'));
+        return json(res, 200, { scannedAt: toolScan.t, tools: list.filter((t) => t.status !== 'absent'), absent: list.filter((t) => t.status === 'absent').map((t) => t.name) });
       }
       if (url.pathname === '/api/prices/sync') {
         // 用户点击“联网同步价格”时才会联网；只为当前未计价的模型给出建议值，不自动保存
