@@ -9,6 +9,7 @@ const plans = require('./plans');
 const tools = require('./tools');
 const { Alerts } = require('./alerts');
 const { insights } = require('./insights');
+const ai = require('./ai');
 
 const BOM = String.fromCharCode(0xfeff); // 让 Excel 按 UTF-8 打开 CSV
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -90,6 +91,8 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
     for (const res of clients) res.write(msg);
   });
 
+  const insightInput = () => ({ records: collector.records, plans: plans.resolve(collector.limits), limitHist: collector.getLimitHist('codex'), limits: collector.limits });
+
   alerts.on('alert', (a) => {
     const msg = `event: alert\ndata: ${JSON.stringify(a)}\n\n`;
     for (const res of clients) res.write(msg);
@@ -97,6 +100,13 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/api/')) {
+      // 防止其他网页借浏览器访问本地接口（DNS 重绑定 / 跨站请求）：
+      // Host 必须是本机地址；写操作必须带自定义请求头，跨站请求带不上它（会触发 CORS 预检，而这里不响应预检）
+      const h = String(req.headers.host || '').toLowerCase();
+      if (!/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(h)) return json(res, 403, { error: 'forbidden host' });
+      if (req.method !== 'GET' && req.headers['x-token-radar'] !== '1') return json(res, 403, { error: 'missing header' });
+    }
     try {
       if (url.pathname === '/api/summary') {
         if (!collector.ready) return json(res, 200, { loading: true });
@@ -135,7 +145,27 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
       }
       if (url.pathname === '/api/insights') {
         if (!collector.ready) return json(res, 200, { items: [] });
-        return json(res, 200, { items: insights({ records: collector.records, plans: plans.resolve(collector.limits), limitHist: collector.getLimitHist('codex'), limits: collector.limits }) });
+        return json(res, 200, { items: insights(insightInput()), ai: ai.lastResult() });
+      }
+      if (url.pathname === '/api/ai') {
+        if (req.method === 'POST') {
+          try { return json(res, 200, ai.setConfig(await readBody(req))); } catch (e) { return json(res, 400, { error: e.message }); }
+        }
+        return json(res, 200, { config: ai.publicConfig(), presets: ai.PRESETS, last: ai.lastResult() });
+      }
+      if (url.pathname === '/api/ai/preview') {
+        // 预览将要发送的内容（已匿名化），和真正发送的完全一致
+        const input = insightInput();
+        return json(res, 200, ai.buildPayload({ ...input, ruleFindings: insights(input) }).data);
+      }
+      if ((url.pathname === '/api/ai/analyze' || url.pathname === '/api/ai/test') && req.method === 'POST') {
+        try {
+          if (url.pathname === '/api/ai/test') return json(res, 200, await ai.test());
+          const input = insightInput();
+          return json(res, 200, await ai.analyze({ ...input, ruleFindings: insights(input) }));
+        } catch (e) {
+          return json(res, e instanceof ai.AIError ? 400 : 500, { error: e.message });
+        }
       }
       if (url.pathname === '/api/alerts') {
         if (req.method === 'POST') alerts.setConfig(await readBody(req));

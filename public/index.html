@@ -108,8 +108,12 @@
     </section>
 
     <section class="block">
-      <div class="block-head"><h2>用量体检</h2><span class="muted">根据近 30 天的数据自动给出结论，每分钟更新</span></div>
-      <div class="card checkup"><ul class="insights" id="insights"></ul></div>
+      <div class="block-head"><h2>用量体检</h2><span class="muted">根据近 30 天的数据自动给出结论，每分钟更新</span>
+        <button type="button" class="btn sm ai-btn" id="btnAi">✦ AI 深度分析</button></div>
+      <div class="card checkup">
+        <ul class="insights" id="insights"></ul>
+        <div class="ai-result" id="aiResult" hidden></div>
+      </div>
     </section>
 
     <section class="block">
@@ -201,6 +205,15 @@
       </div>
       <div class="alert-hist" id="alertHist"></div>
 
+      <h4 id="aiSection">AI 深度分析 <span class="scan-msg" id="aiMsg"></span><button type="button" class="btn sm" id="btnAiTest">测试连接</button></h4>
+      <p class="muted">点击「AI 深度分析」时，才会把近 30 天的<b>汇总统计</b>发给你配置的模型。项目名会换成“项目A”这类代号，不发送路径、会话、代码或对话内容；发送前可以预览。API Key 只保存在本机<span id="aiKeyStore"></span>。</p>
+      <div class="ai-form">
+        <label>服务商 <select id="aiPreset"></select></label>
+        <label>模型 <input id="aiModel" placeholder="模型名"></label>
+        <label class="wide">接口地址 <input id="aiBase" placeholder="https://..."></label>
+        <label class="wide">API Key <input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴你的 API Key"></label>
+      </div>
+
       <h4>订阅 <span class="scan-msg" id="planMsg"></span><button type="button" class="btn sm" id="btnScanPlans">自动扫描</button></h4>
       <p class="muted">从本机 Claude Code 账号信息和 Codex 日志识别当前套餐，并填入默认月费。订阅用户的“费用”是按 API 价折算的等价值，用来和月费比较是否回本。</p>
       <table>
@@ -217,6 +230,16 @@
         </table>
       </div>
       <footer><button value="cancel" class="btn">取消</button><button id="pricingSave" value="default" class="btn primary">保存</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="aiDlg">
+    <form method="dialog" class="dlg">
+      <header class="card-head"><h3>AI 深度分析</h3><button class="x" value="cancel" aria-label="关闭">✕</button></header>
+      <p>将把以下<b>匿名化的汇总统计</b>发送给 <b id="aiTarget"></b>，由它给出发现和建议。</p>
+      <details class="ai-preview"><summary>查看将发送的全部内容</summary><pre id="aiPreview">加载中…</pre></details>
+      <p class="muted" id="aiDlgMsg"></p>
+      <footer><button value="cancel" class="btn">取消</button><button type="button" id="btnAiRun" class="btn primary">开始分析</button></footer>
     </form>
   </dialog>
 

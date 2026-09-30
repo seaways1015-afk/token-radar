@@ -89,5 +89,8 @@
       "icon": "build/icon.png",
       "artifactName": "TokenRadar-${version}-linux-${arch}.${ext}"
     }
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0"
   }
 }

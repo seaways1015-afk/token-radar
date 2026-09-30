@@ -13,6 +13,10 @@
     connected: false,
   };
   function load(k, d) { try { return localStorage.getItem(k) || d; } catch { return d; } }
+  // 写操作统一带上自定义请求头，服务端据此拒绝其他网页发来的跨站请求
+  function post(url, body) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token-Radar': '1' }, body: JSON.stringify(body || {}) });
+  }
   function save(k, v) { try { localStorage.setItem(k, v); } catch { /* 隐私模式 */ } }
 
   // ---------- 格式化 ----------
@@ -559,6 +563,7 @@
     $('#planMsg').textContent = ''; $('#priceMsg').textContent = '';
     renderPlans(await fetch('/api/plans').then((x) => x.json()));
     await loadAlerts();
+    await loadAi();
     $('#pricingDlg').showModal();
   }
 
@@ -621,9 +626,10 @@
       plans[tr.dataset.src] = { mode: tr.querySelector('select').value, monthly: v === '' ? null : Number(v) };
     }
     await Promise.all([
-      fetch('/api/pricing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ models }) }),
-      fetch('/api/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plans) }),
-      fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(alertConfigFromForm()) }),
+      post('/api/pricing', { models }),
+      post('/api/plans', plans),
+      post('/api/alerts', alertConfigFromForm()),
+      saveAi().catch(() => {}),
     ]);
     // 浏览器模式需要授权才能弹系统通知
     if (!bridge && 'Notification' in window && Notification.permission === 'default' && $('#aEnabled').checked) Notification.requestPermission();
@@ -639,7 +645,80 @@
         <li class="insight ${x.level}"><span class="ic" aria-hidden="true">${LEVEL[x.level][0]}</span>
           <div><h4>${esc(x.title)}<span class="lv">${LEVEL[x.level][1]}</span></h4><p>${esc(x.body)}</p></div></li>`).join('')
         : '<li class="muted">数据还不够多，用一段时间后这里会出现结论。</li>';
+      renderAiResult(r.ai);
     } catch { /* 下次再试 */ }
+  }
+
+  // ---------- AI 深度分析 ----------
+  function renderAiResult(res) {
+    const box = $('#aiResult');
+    if (!res || !res.items || !res.items.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = `<div class="ai-head"><b>✦ AI 分析</b><span class="muted">${esc(res.provider)} · ${esc(res.model)} · ${new Date(res.t).toLocaleString()} 生成</span>
+      <button type="button" class="link" id="btnAiRedo">重新分析</button></div>
+      <ul class="insights">${res.items.map((x) => `
+        <li class="insight ${x.level}"><span class="ic" aria-hidden="true">${LEVEL[x.level][0]}</span>
+          <div><h4>${esc(x.title)}<span class="lv">${LEVEL[x.level][1]}</span></h4><p>${esc(x.body)}</p>
+          ${x.evidence ? `<p class="evidence">依据：${esc(x.evidence)}</p>` : ''}</div></li>`).join('')}</ul>`;
+    $('#btnAiRedo').onclick = openAi;
+  }
+
+  async function loadAi() {
+    const r = await fetch('/api/ai').then((x) => x.json());
+    state.aiPresets = r.presets;
+    const c = r.config;
+    $('#aiPreset').innerHTML = Object.entries(r.presets).map(([k, p]) => `<option value="${k}" ${k === c.preset ? 'selected' : ''}>${esc(p.label)}</option>`).join('');
+    $('#aiBase').value = c.baseUrl || r.presets[c.preset].baseUrl;
+    $('#aiModel').value = c.model;
+    $('#aiKey').value = '';
+    $('#aiKey').placeholder = c.hasKey ? `已保存 ${c.keyHint}（留空表示不修改）` : '粘贴你的 API Key';
+    $('#aiKeyStore').textContent = c.hasKey ? (c.encrypted ? '，已用系统加密保存' : '（浏览器模式下未加密，建议用桌面版）') : '';
+    $('#aiMsg').textContent = '';
+    return r;
+  }
+  function aiConfigFromForm() {
+    const o = { preset: $('#aiPreset').value, baseUrl: $('#aiBase').value.trim(), model: $('#aiModel').value.trim() };
+    const k = $('#aiKey').value.trim();
+    if (k) o.apiKey = k;
+    return o;
+  }
+  async function saveAi() {
+    const r = await post('/api/ai', aiConfigFromForm());
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || '保存失败');
+    return j;
+  }
+  async function openAi() {
+    const r = await fetch('/api/ai').then((x) => x.json());
+    if (!r.config.ready) {
+      await openPricing();
+      $('#aiSection').scrollIntoView();
+      $('#aiMsg').textContent = '先配置好服务商、模型和 API Key';
+      return;
+    }
+    $('#aiTarget').textContent = `${r.config.label} · ${r.config.model}`;
+    $('#aiDlgMsg').textContent = '';
+    $('#btnAiRun').disabled = false; $('#btnAiRun').textContent = '开始分析';
+    $('#aiPreview').textContent = '加载中…';
+    $('#aiDlg').showModal();
+    const data = await fetch('/api/ai/preview').then((x) => x.json());
+    $('#aiPreview').textContent = JSON.stringify(data, null, 2);
+  }
+  async function runAi() {
+    const btn = $('#btnAiRun');
+    btn.disabled = true; btn.textContent = '分析中…';
+    $('#aiDlgMsg').textContent = '模型正在分析，通常需要 10 秒到 1 分钟';
+    try {
+      const r = await post('/api/ai/analyze');
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || '分析失败');
+      renderAiResult(j);
+      $('#aiDlg').close();
+      $('#aiResult').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } catch (e) {
+      $('#aiDlgMsg').textContent = '失败：' + e.message;
+      btn.disabled = false; btn.textContent = '重试';
+    }
   }
 
   // ---------- 提醒 ----------
@@ -731,10 +810,27 @@
     });
     $('#btnProjAll').onclick = () => { projState.all = !projState.all; if (state.data) renderProjects(state.data); };
     $('#btnProjExport').onclick = () => { location.href = '/api/export/projects?range=' + state.range; };
+    $('#btnAi').onclick = openAi;
+    $('#btnAiRun').onclick = runAi;
+    $('#aiPreset').onchange = () => {
+      const p = state.aiPresets[$('#aiPreset').value];
+      $('#aiBase').value = p.baseUrl; $('#aiModel').value = p.model;
+    };
+    $('#btnAiTest').onclick = async () => {
+      $('#aiMsg').textContent = '保存并测试中…';
+      try {
+        await saveAi();
+        const r = await post('/api/ai/test');
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || '测试失败');
+        await loadAi();
+        $('#aiMsg').textContent = `连接成功（${(j.ms / 1000).toFixed(1)} 秒）`;
+      } catch (e) { $('#aiMsg').textContent = '失败：' + e.message; }
+    };
     $('#btnAlerts').onclick = async () => { await openPricing(); $('#alertsSection').scrollIntoView(); };
     $('#btnTestAlert').onclick = async () => {
       if (!bridge && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
-      await fetch('/api/alerts/test', { method: 'POST' });
+      await post('/api/alerts/test');
       $('#alertMsg').textContent = '已发送，留意屏幕右下角';
     };
     $('#btnRescan').onclick = async () => { $('#discSummary').textContent = '扫描中…'; await loadTools(true); refresh(); };

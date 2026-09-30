@@ -447,3 +447,20 @@ td.filled input { border-color: var(--accent); }
 .discover .disc-foot { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .discover .disc-foot .btn { margin-left: auto; flex: none; }
 .discover .absent { margin-top: 0; }
+
+/* ---------- AI 深度分析 ---------- */
+.block-head .ai-btn { margin-left: auto; background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.block-head .ai-btn:hover { background: color-mix(in srgb, var(--accent) 24%, var(--card)); }
+.ai-result { border-top: 1px dashed var(--line); margin-top: 6px; padding-top: 10px; }
+.ai-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 4px 0 2px; font-size: 13px; }
+.ai-head b { color: var(--accent); }
+.ai-head .link { margin-left: auto; font-size: 12px; background: none; border: 0; }
+.insight .evidence { margin-top: 4px; font-size: 11.5px; color: var(--ink-3); }
+.ai-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+.ai-form label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ai-form label.wide { grid-column: 1 / -1; }
+.ai-form input, .ai-form select { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
+.ai-preview summary { cursor: pointer; font-size: 13px; color: var(--accent); margin: 6px 0; }
+.ai-preview pre { max-height: 46vh; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+#aiDlg { max-width: 720px; }
+#aiDlg .dlg p { font-size: 13.5px; }
