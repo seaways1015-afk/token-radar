@@ -1,6 +1,6 @@
 {
   "name": "token-radar",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "自动发现本机 AI 编程工具，实时监控 token 消耗、费用与订阅额度的桌面应用",
   "author": "seaways1015-afk",
   "homepage": "https://github.com/seaways1015-afk/token-radar",
