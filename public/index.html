@@ -137,11 +137,30 @@
       </article>
     </section>
 
+    <section class="card block projects-card">
+      <header class="card-head">
+        <h3>项目成本 <span class="muted" id="projMeta"></span></h3>
+        <div class="proj-actions">
+          <button type="button" class="btn sm" id="btnProjAll" hidden>显示全部</button>
+          <button type="button" class="btn sm" id="btnProjExport">导出 CSV</button>
+        </div>
+      </header>
+      <div class="tbl-scroll">
+        <table class="proj-table">
+          <thead><tr>
+            <th data-sort="name">项目</th><th>工具</th>
+            <th data-sort="requests" class="r">请求</th><th data-sort="sessions" class="r">会话</th>
+            <th data-sort="tokens" class="r">Token</th>
+            <th data-sort="cost" class="r" title="按 API 公开价折算，包括订阅内的使用">等价费用</th>
+            <th data-sort="paid" class="r" title="只统计按量计费的工具，是真实花出去的钱">实际按量花费</th>
+            <th data-sort="last" class="r">最近活跃</th>
+          </tr></thead>
+          <tbody id="projRows"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="grid-bot">
-      <article class="card">
-        <header class="card-head"><h3>项目 Top</h3></header>
-        <ul class="rows" id="projects"></ul>
-      </article>
       <article class="card">
         <header class="card-head"><h3>工具调用 Top</h3></header>
         <ul class="rows" id="tools"></ul>

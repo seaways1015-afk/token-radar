@@ -238,7 +238,7 @@ main {
 
 /* ---------- 趋势 / 列表 ---------- */
 .grid-mid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 18px; margin-top: 18px; }
-.grid-bot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+.grid-bot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
 .trend { height: 260px; position: relative; }
 .trend svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .trend .grid line { stroke: var(--line); }
@@ -391,3 +391,21 @@ td.filled input { border-color: var(--accent); }
 .insight h4 { margin: 3px 0 4px; font-size: 14px; font-weight: 600; }
 .insight p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--ink-2); }
 .insight .lv { font-size: 11px; color: var(--ink-3); margin-left: 6px; font-weight: 400; }
+
+/* ---------- 项目成本 ---------- */
+.projects-card { margin-top: 18px; }
+.proj-actions { display: flex; gap: 8px; }
+.tbl-scroll { overflow-x: auto; }
+.proj-table { min-width: 720px; }
+.proj-table th { background: transparent; position: static; white-space: nowrap; }
+.proj-table th[data-sort] { cursor: pointer; user-select: none; }
+.proj-table th[data-sort]:hover, .proj-table th.sorted { color: var(--ink); }
+.proj-table th.sorted::after { content: attr(data-dir); margin-left: 4px; }
+.proj-table td { padding: 9px 8px; white-space: nowrap; }
+.proj-table .r { text-align: right; }
+.proj-table .num { font-family: var(--serif); }
+.proj-table .pn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.proj-table tbody tr:hover { background: var(--chip); }
+.seg-bar { display: flex; gap: 2px; width: 140px; height: 8px; }
+.seg-bar i { border-radius: 3px; min-width: 3px; }
+.proj-table .tag { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--warn-bg); color: var(--warn-ink); }

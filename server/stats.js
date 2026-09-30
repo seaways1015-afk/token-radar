@@ -6,6 +6,13 @@ const MIN = 60e3, HOUR = 60 * MIN, DAY = 24 * HOUR;
 
 const tok = (r) => r.in + r.out + r.cr + r.cw5 + r.cw1h;
 
+function projectKey(p) {
+  if (!p) return '(未知)';
+  let k = p.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (process.platform === 'win32' || /^[a-z]:\//i.test(k)) k = k.toLowerCase();
+  return k;
+}
+
 function startOfDay(t) { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
 
 // 第一个 t >= x 的下标（records 按 t 升序）
@@ -71,9 +78,12 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
     const mk = r.provider ? r.provider + '/' + r.model : r.model;
     const m = byModel[mk] || (byModel[mk] = { model: r.model, provider: r.provider || '', src: r.src, tokens: 0, cost: 0, requests: 0, priced: !!c });
     m.tokens += tok(r); m.requests++; if (c) m.cost += c.cost;
-    const pk = r.project || '(未知)';
-    const p = byProject[pk] || (byProject[pk] = { project: pk, tokens: 0, cost: 0, unpriced: 0, requests: 0, sessions: new Set(), last: 0 });
-    p.tokens += tok(r); p.requests++; p.sessions.add(r.session); p.last = Math.max(p.last, r.t); if (c) p.cost += c.cost; else p.unpriced += tok(r);
+    // 同一目录在不同工具里的写法不同（D:\x 与 D:/x、大小写），归并成一个项目
+    const pk = projectKey(r.project);
+    const p = byProject[pk] || (byProject[pk] = { project: r.project || '(未知)', tokens: 0, cost: 0, paid: 0, unpriced: 0, requests: 0, sessions: new Set(), last: 0, bySrc: {} });
+    p.tokens += tok(r); p.requests++; p.sessions.add(r.src + r.session); p.last = Math.max(p.last, r.t);
+    p.bySrc[r.src] = (p.bySrc[r.src] || 0) + tok(r);
+    if (c) { p.cost += c.cost; if (!(plans[r.src] && plans[r.src].subscription)) p.paid += c.cost; } else p.unpriced += tok(r);
     if (r.tools) for (const t of r.tools) byTool[t] = (byTool[t] || 0) + 1;
   }
 
@@ -141,10 +151,10 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
     realtime: { perMin: last10 / 10, lastHourTokens: lastHourTok, lastHourCost, minutes, minuteStart },
     sources,
     models: Object.values(byModel).sort((a, b) => b.tokens - a.tokens),
-    projects: Object.values(byProject).map((p) => ({ ...p, sessions: p.sessions.size })).sort((a, b) => b.tokens - a.tokens).slice(0, 8),
+    projects: Object.values(byProject).map((p) => ({ ...p, sessions: p.sessions.size })).sort((a, b) => b.cost - a.cost || b.tokens - a.tokens).slice(0, 200),
     tools: Object.entries(byTool).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 10),
     recent,
   };
 }
 
-module.exports = { summary, tok };
+module.exports = { summary, tok, projectKey };

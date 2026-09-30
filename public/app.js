@@ -467,12 +467,7 @@
       <li style="--c:${color(m.src)}"><span class="nm"><i class="sw" style="background:${color(m.src)}"></i>${m.provider ? `<span class="muted">${esc(m.provider)} ·</span>` : ''}${esc(m.model)}${m.priced ? '' : '<button class="tag" data-pricing>未计价</button>'}</span>
       <span class="v">${fmt(m.tokens)}${m.priced ? ' · ' + usd(m.cost) : ''}</span><span class="bar"><i style="width:${(m.tokens / mMax) * 100}%"></i></span></li>`);
 
-    const pp = d.projects, pMax = pp[0] ? pp[0].tokens : 1;
-    $('#projects').innerHTML = rowsHTML(pp, (p) => {
-      const name = p.project.split(/[\\/]/).filter(Boolean).pop() || p.project;
-      return `<li title="${esc(p.project)}"><span class="nm">${esc(name)}<span class="muted">${p.sessions} 会话</span></span>
-        <span class="v">${fmt(p.tokens)} · ${!p.cost && p.unpriced ? '未计价' : usd(p.cost)}</span><span class="bar"><i style="width:${(p.tokens / pMax) * 100}%"></i></span></li>`;
-    });
+    renderProjects(d);
 
     const tt = d.tools, tMax = tt[0] ? tt[0].count : 1;
     $('#tools').innerHTML = rowsHTML(tt, (t) => `
@@ -490,6 +485,38 @@
         <span class="tk">${fmt(r.tokens)}<small>${r.cost == null ? '—' : usd(r.cost)}</small></span></li>`;
     }, '这个范围内还没有请求');
     renderLists.seen = new Set(d.recent.map((r) => r.t + r.model + r.tokens));
+  }
+
+  // ---------- 项目成本表 ----------
+  const projState = { sort: 'cost', dir: -1, all: false };
+  const RANGE_LABEL = { today: '今日', '7d': '近 7 天', '30d': '近 30 天', all: '全部' };
+  function renderProjects(d) {
+    const name = (p) => p.project.split(/[\\/]/).filter(Boolean).pop() || p.project;
+    const key = { name: (p) => name(p).toLowerCase(), requests: (p) => p.requests, sessions: (p) => p.sessions, tokens: (p) => p.tokens, cost: (p) => p.cost, paid: (p) => p.paid, last: (p) => p.last }[projState.sort];
+    const list = d.projects.slice().sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0) * projState.dir);
+    const shown = projState.all ? list : list.slice(0, 12);
+    const totalCost = list.reduce((a, p) => a + p.cost, 0), totalPaid = list.reduce((a, p) => a + p.paid, 0);
+    $('#projMeta').textContent = list.length ? `${RANGE_LABEL[d.range]} · ${list.length} 个项目 · 等价 ${usd(totalCost)} · 实付 ${usd(totalPaid)}` : '';
+    $('#btnProjAll').hidden = list.length <= 12;
+    $('#btnProjAll').textContent = projState.all ? '收起' : `显示全部 ${list.length} 个`;
+    document.querySelectorAll('.proj-table th[data-sort]').forEach((th) => {
+      th.classList.toggle('sorted', th.dataset.sort === projState.sort);
+      th.dataset.dir = th.dataset.sort === projState.sort ? (projState.dir < 0 ? '↓' : '↑') : '';
+    });
+    const srcLabel = (id) => (d.sources.find((s) => s.id === id) || { label: id }).label;
+    $('#projRows').innerHTML = shown.length ? shown.map((p) => {
+      const segs = Object.entries(p.bySrc).sort((a, b) => b[1] - a[1]);
+      const bar = segs.map(([id, v]) => `<i style="flex-grow:${v};background:${color(id)}" title="${esc(srcLabel(id))} ${fmt(v)}"></i>`).join('');
+      const tip = segs.map(([id, v]) => `${srcLabel(id)} ${fmt(v)}`).join(' · ');
+      return `<tr>
+        <td class="pn" title="${esc(p.project)}">${esc(name(p))}</td>
+        <td><div class="seg-bar" title="${esc(tip)}">${bar}</div></td>
+        <td class="r">${p.requests.toLocaleString()}</td><td class="r">${p.sessions}</td>
+        <td class="r num">${fmt(p.tokens)}</td>
+        <td class="r num">${!p.cost && p.unpriced ? '<span class="tag">未计价</span>' : usd(p.cost)}</td>
+        <td class="r num ${p.paid ? '' : 'muted'}">${p.paid ? usd(p.paid) : '—'}</td>
+        <td class="r muted">${ago(p.last)}</td></tr>`;
+    }).join('') : '<tr><td colspan="8" class="muted">这个范围内还没有项目数据</td></tr>';
   }
 
   function renderMini(d) {
@@ -678,6 +705,16 @@
     $('#pricingSave').onclick = () => { savePricing(); };
     $('#btnScanPlans').onclick = scanPlans;
     $('#btnSyncPrices').onclick = syncPrices;
+    document.querySelectorAll('.proj-table th[data-sort]').forEach((th) => {
+      th.onclick = () => {
+        const k = th.dataset.sort;
+        projState.dir = projState.sort === k ? -projState.dir : k === 'name' ? 1 : -1;
+        projState.sort = k;
+        if (state.data) renderProjects(state.data);
+      };
+    });
+    $('#btnProjAll').onclick = () => { projState.all = !projState.all; if (state.data) renderProjects(state.data); };
+    $('#btnProjExport').onclick = () => { location.href = '/api/export/projects?range=' + state.range; };
     $('#btnAlerts').onclick = async () => { await openPricing(); $('#alertsSection').scrollIntoView(); };
     $('#btnTestAlert').onclick = async () => {
       if (!bridge && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();

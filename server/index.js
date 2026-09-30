@@ -10,6 +10,7 @@ const tools = require('./tools');
 const { Alerts } = require('./alerts');
 const { insights } = require('./insights');
 
+const BOM = String.fromCharCode(0xfeff); // 让 Excel 按 UTF-8 打开 CSV
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 
@@ -166,6 +167,18 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
         }
         return json(res, 200, plans.resolve(collector.limits));
       }
+      if (url.pathname === '/api/export/projects') {
+        const d = summary(collector.records, { range: url.searchParams.get('range') || '30d', plans: plans.resolve(collector.limits) });
+        const esc = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+        const rows = ['project,path,requests,sessions,tokens,api_equivalent_usd,paid_usd,unpriced_tokens,tools,last_active'];
+        for (const p of d.projects) {
+          const name = p.project.split(/[\\/]/).filter(Boolean).pop() || p.project;
+          const toolsUsed = Object.entries(p.bySrc).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' ');
+          rows.push([esc(name), esc(p.project), p.requests, p.sessions, p.tokens, p.cost.toFixed(4), p.paid.toFixed(4), p.unpriced, esc(toolsUsed), new Date(p.last).toISOString()].join(','));
+        }
+        res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="token-radar-projects-${d.range}.csv"` });
+        return res.end(BOM + rows.join('\n'));
+      }
       if (url.pathname === '/api/export') {
         const rows = ['time,source,provider,model,session,project,input,output,cache_read,cache_write,cost_usd'];
         for (const r of collector.records) {
@@ -173,7 +186,7 @@ async function startServer({ port = Number(process.env.PORT) || 17321 } = {}) {
           rows.push([new Date(r.t).toISOString(), r.src, r.provider || '', r.model, r.session, JSON.stringify(r.project), r.in, r.out, r.cr, r.cw5 + r.cw1h, c ? c.cost.toFixed(6) : ''].join(','));
         }
         res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="token-radar.csv"' });
-        return res.end('﻿' + rows.join('\n'));
+        return res.end(BOM + rows.join('\n'));
       }
       // 静态文件
       const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
