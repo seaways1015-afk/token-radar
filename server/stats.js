@@ -6,6 +6,9 @@ const MIN = 60e3, HOUR = 60 * MIN, DAY = 24 * HOUR;
 
 const tok = (r) => r.in + r.out + r.cr + r.cw5 + r.cw1h;
 
+// Claude Code / Codex 的记录不带供应商字段，按工具归属
+const DEFAULT_PROVIDER = { claude: 'anthropic', codex: 'openai' };
+
 function projectKey(p) {
   if (!p) return '(未知)';
   let k = p.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -58,7 +61,7 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
 
   // 当前范围
   const cur = blank();
-  const bySrc = {}, byModel = {}, byProject = {}, byTool = {};
+  const bySrc = {}, byModel = {}, byProject = {}, byTool = {}, byProvider = {};
   const nb = Math.max(1, Math.ceil(((b.len ? b.start + b.len : startOfDay(now) + DAY) - b.start) / b.bucket));
   const series = Array.from({ length: nb }, (_, i) => ({ t: b.start + i * b.bucket, tokens: 0, cost: 0, bySrc: {} }));
 
@@ -85,6 +88,15 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
     p.bySrc[r.src] = (p.bySrc[r.src] || 0) + tok(r);
     if (c) { p.cost += c.cost; if (!(plans[r.src] && plans[r.src].subscription)) p.paid += c.cost; } else p.unpriced += tok(r);
     if (r.tools) for (const t of r.tools) byTool[t] = (byTool[t] || 0) + 1;
+    // 供应商：订阅内的用量和按量计费的真实花费分开统计
+    const pvKey = (r.provider || DEFAULT_PROVIDER[r.src] || 'unknown').toLowerCase();
+    const pv = byProvider[pvKey] || (byProvider[pvKey] = { id: pvKey, subTokens: 0, subCost: 0, paidTokens: 0, paidCost: 0, unpriced: 0, requests: 0, via: {}, models: {} });
+    const isSub = !!(plans[r.src] && plans[r.src].subscription);
+    pv.requests++;
+    pv.via[r.src] = (pv.via[r.src] || 0) + tok(r);
+    pv.models[r.model] = (pv.models[r.model] || 0) + tok(r);
+    if (isSub) { pv.subTokens += tok(r); if (c) pv.subCost += c.cost; } else { pv.paidTokens += tok(r); if (c) pv.paidCost += c.cost; }
+    if (!c) pv.unpriced += tok(r);
   }
 
   // 同期对比：上一个等长区间的同一时刻
@@ -153,6 +165,12 @@ function summary(allRecords, { range = 'today', src = 'all', now = Date.now(), p
     models: Object.values(byModel).sort((a, b) => b.tokens - a.tokens),
     projects: Object.values(byProject).map((p) => ({ ...p, sessions: p.sessions.size })).sort((a, b) => b.cost - a.cost || b.tokens - a.tokens).slice(0, 200),
     tools: Object.entries(byTool).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 10),
+    providers: Object.values(byProvider).map((p) => ({
+      ...p,
+      tokens: p.subTokens + p.paidTokens,
+      via: Object.entries(p.via).sort((a, b) => b[1] - a[1]).map(([k]) => k),
+      models: Object.entries(p.models).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k),
+    })).sort((a, b) => b.paidCost + b.subCost - (a.paidCost + a.subCost) || b.tokens - a.tokens),
     recent,
   };
 }

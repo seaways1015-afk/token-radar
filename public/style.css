@@ -238,7 +238,7 @@ main {
 
 /* ---------- 趋势 / 列表 ---------- */
 .grid-mid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 18px; margin-top: 18px; }
-.grid-bot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+.grid-bot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
 .trend { height: 260px; position: relative; }
 .trend svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .trend .grid line { stroke: var(--line); }
@@ -409,3 +409,6 @@ td.filled input { border-color: var(--accent); }
 .seg-bar { display: flex; gap: 2px; width: 140px; height: 8px; }
 .seg-bar i { border-radius: 3px; min-width: 3px; }
 .proj-table .tag { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--warn-bg); color: var(--warn-ink); }
+.bill { font-size: 10.5px; padding: 0 6px; border-radius: 5px; line-height: 17px; }
+.bill.sub { background: var(--chip); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
+.bill.paid { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--ink); }

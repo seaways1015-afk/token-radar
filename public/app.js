@@ -469,6 +469,17 @@
 
     renderProjects(d);
 
+    // 供应商
+    const PV_NAME = { anthropic: 'Anthropic', openai: 'OpenAI', deepseek: 'DeepSeek', opencode: 'OpenCode Zen', openrouter: 'OpenRouter', moonshot: 'Moonshot', kimi: 'Moonshot', google: 'Google', gemini: 'Google' };
+    const srcName = (id) => (d.sources.find((s) => s.id === id) || { label: id }).label;
+    const pv = d.providers, pvMax = pv[0] ? Math.max(...pv.map((p) => p.tokens)) : 1;
+    $('#providers').innerHTML = rowsHTML(pv, (p) => {
+      const tags = [p.subTokens ? '<span class="bill sub">订阅</span>' : '', p.paidTokens ? '<span class="bill paid">按量</span>' : ''].join('');
+      const money = [p.subTokens ? `折合 ${usd(p.subCost)}` : '', p.paidTokens ? (p.paidCost || !p.unpriced ? `实付 ${usd(p.paidCost)}` : '实付 未计价') : ''].filter(Boolean).join(' · ');
+      return `<li title="${esc('模型：' + p.models.join('、'))}"><span class="nm">${esc(PV_NAME[p.id] || p.id)}${tags}<span class="muted">via ${esc(p.via.map(srcName).join('、'))}</span></span>
+        <span class="v">${fmt(p.tokens)} · ${money}</span><span class="bar"><i style="width:${(p.tokens / pvMax) * 100}%;background:${color(p.via[0])}"></i></span></li>`;
+    });
+
     const tt = d.tools, tMax = tt[0] ? tt[0].count : 1;
     $('#tools').innerHTML = rowsHTML(tt, (t) => `
       <li><span class="nm">${esc(t.name)}</span><span class="v">${t.count.toLocaleString()} 次</span><span class="bar"><i style="width:${(t.count / tMax) * 100}%"></i></span></li>`);
